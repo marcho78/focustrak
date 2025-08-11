@@ -8,7 +8,7 @@ import DistractionCapture from '@/components/DistractionCapture';
 import TaskSteps from '@/components/TaskSteps';
 import StopReasonModal from '@/components/StopReasonModal';
 import SessionCompleteModal from '@/components/SessionCompleteModal';
-import TaskHistory from '@/components/TaskHistory';
+import TaskManager from '@/components/TaskManager';
 import SettingsModal from '@/components/SettingsModal';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
@@ -664,10 +664,33 @@ export default function Home() {
         currentSettings={settings}
       />
 
-      {/* Task History Modal */}
-      <TaskHistory
+      {/* Task Manager Modal */}
+      <TaskManager
         isOpen={isTaskHistoryOpen}
         onClose={() => setIsTaskHistoryOpen(false)}
+        onContinueTask={(task) => {
+          // Convert TaskManager task format to our Task format
+          const convertedTask: Task = {
+            id: task.id,
+            userId: 'current-user',
+            title: task.title,
+            description: task.description,
+            status: 'pending',
+            priority: 2,
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            estimatedSessions: 1,
+            steps: task.steps
+          };
+          
+          // Reset timer and start new session
+          timer.reset();
+          setCurrentTask(convertedTask);
+          
+          setTimeout(() => {
+            handleStart(convertedTask);
+          }, 10);
+        }}
       />
       
       {/* Floating action buttons */}

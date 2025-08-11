@@ -18,17 +18,7 @@ export function useTimer({
   
   // Update duration when it changes (but only if timer is not running)
   useEffect(() => {
-    console.log('⚡ Duration update effect:', {
-      duration,
-      isRunning,
-      isPaused,
-      timeRemaining,
-      initialDuration,
-      shouldUpdate: !isRunning && !isPaused && timeRemaining === initialDuration
-    });
-    
     if (!isRunning && !isPaused && timeRemaining === initialDuration) {
-      console.log('🔄 Updating timer duration from', initialDuration, 'to', duration);
       setTimeRemaining(duration);
       setInitialDuration(duration);
     }
@@ -80,42 +70,25 @@ export function useTimer({
   }, [isRunning, isPaused, initialDuration, onComplete, onTick]);
 
   const start = useCallback(() => {
-    console.log('⏱️ Timer start called:', {
-      isRunning,
-      isPaused,
-      timeRemaining,
-      initialDuration,
-      duration
-    });
-    
     if (!isRunning) {
       setIsRunning(true);
       setIsPaused(false);
       if (timeRemaining === initialDuration || timeRemaining === 0) {
         // Fresh start (either at full duration or after reset)
-        console.log('🚀 Fresh timer start');
         setTimeRemaining(duration);
         setInitialDuration(duration);
         startTimeRef.current = Date.now();
         pausedTimeRef.current = 0;
       } else {
         // Resume from pause
-        console.log('▶️ Resume from pause');
         startTimeRef.current = Date.now() - (initialDuration - timeRemaining) * 1000;
       }
     } else if (isPaused) {
       // Resume from pause
-      console.log('▶️ Resume from pause (was paused)');
       const pauseDuration = Math.floor((Date.now() - (startTimeRef.current || 0)) / 1000) - (initialDuration - timeRemaining);
       pausedTimeRef.current += pauseDuration;
       setIsPaused(false);
     }
-    
-    console.log('⏱️ Timer start completed:', {
-      isRunning: true,
-      timeRemaining: timeRemaining === 0 ? duration : timeRemaining,
-      initialDuration: timeRemaining === 0 ? duration : initialDuration
-    });
   }, [isRunning, isPaused, timeRemaining, initialDuration, duration]);
 
   const pause = useCallback(() => {
@@ -125,7 +98,6 @@ export function useTimer({
   }, [isRunning, isPaused]);
 
   const reset = useCallback(() => {
-    console.log('🔄 Timer reset called with duration:', duration);
     setIsRunning(false);
     setIsPaused(false);
     setTimeRemaining(duration);
@@ -136,7 +108,6 @@ export function useTimer({
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    console.log('✅ Timer reset completed:', { timeRemaining: duration, initialDuration: duration });
   }, [duration]);
 
   const skip = useCallback(() => {
