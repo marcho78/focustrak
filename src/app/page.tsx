@@ -1,103 +1,695 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Task, Session, Distraction } from '@/types';
+import StartButton from '@/components/StartButton';
+import TimerDisplay from '@/components/TimerDisplay';
+import DistractionCapture from '@/components/DistractionCapture';
+import TaskSteps from '@/components/TaskSteps';
+import StopReasonModal from '@/components/StopReasonModal';
+import SessionCompleteModal from '@/components/SessionCompleteModal';
+import TaskHistory from '@/components/TaskHistory';
+import SettingsModal from '@/components/SettingsModal';
+import { useTimer } from '@/hooks/useTimer';
+import { useSettings } from '@/hooks/useSettings';
+import { 
+  PauseIcon, 
+  PlayIcon, 
+  StopIcon, 
+  ExclamationTriangleIcon,
+  FireIcon,
+  TrophyIcon,
+  Cog6ToothIcon 
+} from '@heroicons/react/24/solid';
+
+// AI function for generating task steps
+function generateTaskSteps(title: string): string[] {
+  const commonSteps = {
+    'write': ['Open document', 'Write outline', 'Write first draft'],
+    'read': ['Find materials', 'Set up reading space', 'Start reading'],
+    'code': ['Set up development environment', 'Create basic structure', 'Implement first feature'],
+    'study': ['Gather materials', 'Create study space', 'Review first topic'],
+    'email': ['Open email client', 'Sort by priority', 'Reply to first email'],
+    'design': ['Open design tool', 'Create new project', 'Start with wireframe'],
+  };
+  
+  const titleLower = title.toLowerCase();
+  for (const [key, steps] of Object.entries(commonSteps)) {
+    if (titleLower.includes(key)) {
+      return steps;
+    }
+  }
+  
+  // Default generic steps
+  return [
+    'Set up workspace and materials',
+    'Start with the smallest first step',
+    'Make initial progress'
+  ];
+}
+
+// API helper functions
+async function createTask(title: string, description?: string): Promise<Task> {
+  const steps = generateTaskSteps(title);
+  
+  const response = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description, steps })
+  });
+  
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to create task');
+  }
+  
+  return result.data;
+}
+
+async function createSession(taskId?: string): Promise<Session> {
+  const response = await fetch('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId })
+  });
+  
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to create session');
+  }
+  
+  return result.data;
+}
+
+async function updateSession(sessionId: string, updates: Record<string, unknown>): Promise<Session> {
+  const response = await fetch(`/api/sessions/${sessionId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to update session');
+  }
+  
+  return result.data;
+}
+
+async function captureDistraction(sessionId: string, content: string): Promise<void> {
+  const response = await fetch('/api/distractions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, content })
+  });
+  
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to capture distraction');
+  }
+}
+
+async function getStreak(): Promise<{ streak: number; today: Record<string, unknown> }> {
+  const response = await fetch('/api/streak');
+  const result = await response.json();
+  
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to get streak');
+  }
+  
+  return result.data;
+}
+
+// API helper for toggling steps
+async function toggleTaskStep(taskId: string, stepId: string): Promise<void> {
+  const response = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to toggle step');
+  }
+}
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [currentTask, setCurrentTask] = useState<Task | null>(null);
+  const [currentSession, setCurrentSession] = useState<Session | null>(null);
+  const [isDistractionCaptureOpen, setIsDistractionCaptureOpen] = useState(false);
+  const [distractions, setDistractions] = useState<Distraction[]>([]);
+  const [streak, setStreak] = useState(3); // Mock streak
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopReasonModalOpen, setIsStopReasonModalOpen] = useState(false);
+  const [isSessionCompleteModalOpen, setIsSessionCompleteModalOpen] = useState(false);
+  const [isTaskHistoryOpen, setIsTaskHistoryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [completedSessionData, setCompletedSessionData] = useState<{
+    duration: number;
+    taskTitle?: string;
+    completedSteps: number;
+    totalSteps: number;
+    streak: number;
+    isTaskComplete?: boolean;
+    task?: Task | null;
+  } | null>(null);
+  
+  // Load settings
+  const { settings, saveSettings, isLoaded } = useSettings();
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Use refs to store current values for stable callback
+  const currentSessionRef = useRef<Session | null>(null);
+  const currentTaskRef = useRef<Task | null>(null);
+  const setDistractionsRef = useRef(setDistractions);
+  const setCurrentSessionRef = useRef(setCurrentSession);
+  const setCurrentTaskRef = useRef(setCurrentTask);
+  const setStreakRef = useRef(setStreak);
+
+  // Update refs when state changes
+  useEffect(() => {
+    currentSessionRef.current = currentSession;
+  }, [currentSession]);
+
+  useEffect(() => {
+    currentTaskRef.current = currentTask;
+  }, [currentTask]);
+
+  useEffect(() => {
+    setDistractionsRef.current = setDistractions;
+    setCurrentSessionRef.current = setCurrentSession;
+    setCurrentTaskRef.current = setCurrentTask;
+    setStreakRef.current = setStreak;
+  }, []);
+
+  // Stable callback function
+  const handleSessionComplete = useCallback(async () => {
+    console.log('🔥 handleSessionComplete called!', { currentSession: currentSessionRef.current });
+    const session = currentSessionRef.current;
+    if (session) {
+      try {
+        console.log('Attempting to update session:', session.id);
+        // Calculate actual duration from the configured session duration
+        const sessionDuration = settings.defaultSessionDuration || 1500;
+        const actualDuration = sessionDuration; // Full session completed
+        
+        // Update session as completed in database
+        await updateSession(session.id, {
+          status: 'completed',
+          endedAt: new Date().toISOString(),
+          actualDuration: actualDuration
+        });
+        
+        console.log('Session completed successfully!', session);
+        
+        // Check if task should be marked as completed
+        const currentTask = currentTaskRef.current;
+        if (currentTask && currentTask.steps && currentTask.steps.length > 0) {
+          const allStepsComplete = currentTask.steps.every(step => step.done);
+          
+          if (allStepsComplete) {
+            try {
+              // Mark task as completed
+              const response = await fetch(`/api/tasks/${currentTask.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'completed',
+                  completedAt: new Date().toISOString()
+                })
+              });
+              
+              const result = await response.json();
+              if (!result.success) {
+                console.warn('Failed to mark task as completed:', result.error);
+              }
+            } catch (error) {
+              console.warn('Failed to mark task as completed:', error);
+            }
+          }
+        }
+        
+        // Update streak
+        let currentStreak = streak;
+        try {
+          const streakData = await getStreak();
+          setStreakRef.current(streakData.streak);
+          currentStreak = streakData.streak;
+        } catch (error) {
+          console.warn('Failed to update streak:', error);
+        }
+        
+        // Prepare session completion data
+        const task = currentTaskRef.current;
+        const completedSteps = task?.steps?.filter(step => step.done).length || 0;
+        const totalSteps = task?.steps?.length || 0;
+        const isTaskFullyComplete = task && totalSteps > 0 && completedSteps === totalSteps;
+        
+        setCompletedSessionData({
+          duration: actualDuration,
+          taskTitle: task?.title,
+          completedSteps,
+          totalSteps,
+          streak: currentStreak,
+          isTaskComplete: isTaskFullyComplete,
+          task: !isTaskFullyComplete ? task : null // Keep task for resumption if not complete
+        });
+        
+        // Show completion modal
+        setIsSessionCompleteModalOpen(true);
+        
+      } catch (error) {
+        console.error('Failed to complete session:', error);
+        
+        // Still show success modal even if database save failed
+        const task = currentTaskRef.current;
+        const completedSteps = task?.steps?.filter(step => step.done).length || 0;
+        const totalSteps = task?.steps?.length || 0;
+        
+        setCompletedSessionData({
+          duration: settings.defaultSessionDuration || 1500,
+          taskTitle: task?.title,
+          completedSteps,
+          totalSteps,
+          streak
+        });
+        
+        setIsSessionCompleteModalOpen(true);
+      }
+      
+      // Reset for next session regardless of database update success
+      setCurrentSessionRef.current(null);
+      setCurrentTaskRef.current(null);
+      setDistractionsRef.current([]);
+    } else {
+      console.log('⚠️ handleSessionComplete called but no current session');
+    }
+  }, [settings.defaultSessionDuration, streak]); // Include necessary dependencies
+
+  // Create timer with the stable completion callback - wait for settings to load
+  const timer = useTimer({
+    duration: settings.defaultSessionDuration || 1500,
+    onComplete: handleSessionComplete,
+  });
+
+  const handleStart = useCallback(async (task?: Task) => {
+    console.log('🚀 Starting session with task:', task);
+    setIsStarting(true);
+    
+    try {
+      let currentTaskToUse = task;
+      
+      // Validate that we have a task to work with
+      if (!task) {
+        throw new Error('Cannot start focus session without a task. Please create a new task first.');
+      }
+      
+      // If it's a temporary task, create it in the database
+      if (task.id.startsWith('temp-')) {
+        if (task.title) {
+          console.log('Creating new task:', task.title);
+          currentTaskToUse = await createTask(task.title, task.description);
+          console.log('Created task:', currentTaskToUse);
+        } else {
+          throw new Error('Cannot create task without a title.');
+        }
+      }
+      
+      console.log('Setting current task to:', currentTaskToUse);
+      setCurrentTask(currentTaskToUse || null);
+      
+      // Create session in database
+      console.log('Creating session for task ID:', currentTaskToUse?.id);
+      const session = await createSession(currentTaskToUse?.id);
+      console.log('Created session:', session);
+      setCurrentSession(session);
+      
+      // Start the timer
+      console.log('Starting timer...');
+      timer.start();
+      console.log('Timer started. Current state:', { isRunning: timer.isRunning, timeRemaining: timer.timeRemaining });
+      
+      // Update streak info
+      try {
+        const streakData = await getStreak();
+        setStreak(streakData.streak);
+      } catch (error) {
+        console.warn('Failed to update streak:', error);
+      }
+      
+    } catch (error) {
+      console.error('Failed to start session:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to start session. Please try again.';
+      alert(errorMessage);
+    } finally {
+      setIsStarting(false);
+    }
+  }, [timer]);
+
+  const handlePause = () => {
+    if (timer.isRunning && !timer.isPaused) {
+      timer.pause();
+    } else if (timer.isPaused) {
+      timer.start();
+    }
+  };
+
+  const handleStopClick = () => {
+    setIsStopReasonModalOpen(true);
+  };
+
+  const handleConfirmStop = async (reason?: string) => {
+    if (currentSession) {
+      try {
+        // Update session as stopped in database
+        await updateSession(currentSession.id, {
+          status: 'skipped',
+          endedAt: new Date().toISOString(),
+          actualDuration: (settings.defaultSessionDuration || 1500) - timer.timeRemaining,
+          notes: reason ? `Stopped early: ${reason}` : 'Stopped early'
+        });
+      } catch (error) {
+        console.error('Failed to update stopped session:', error);
+      }
+    }
+    
+    // Stop timer and reset state
+    timer.reset();
+    setCurrentSession(null);
+    setCurrentTask(null);
+    setDistractions([]);
+    setIsStopReasonModalOpen(false);
+  };
+
+  const handleSessionCompleteModalClose = () => {
+    setIsSessionCompleteModalOpen(false);
+    setCompletedSessionData(null);
+  };
+
+  const handleContinueTask = useCallback(() => {
+    console.log('🔄 handleContinueTask called');
+    const taskData = completedSessionData?.task;
+    console.log('📋 Task data:', taskData);
+    
+    if (taskData) {
+      // Reset step completion status to allow working on the task again
+      const resetTask = {
+        ...taskData,
+        steps: taskData.steps.map(step => ({ ...step, done: false }))
+      };
+      
+      console.log('✨ Reset task with steps:', resetTask.steps.map(s => ({ content: s.content, done: s.done })));
+      
+      // Close modal and clear session data first
+      setIsSessionCompleteModalOpen(false);
+      setCompletedSessionData(null);
+      
+      // Reset the timer and task state synchronously
+      console.log('🔄 Resetting timer and setting task...');
+      timer.reset();
+      setCurrentTask(resetTask);
+      
+      // Use setTimeout to defer the handleStart call to avoid DOM corruption
+      setTimeout(() => {
+        console.log('🚀 Starting new session with reset task');
+        handleStart(resetTask);
+      }, 10);
+    } else {
+      console.log('❌ No task data available for continuation');
+    }
+  }, [completedSessionData, handleStart, timer]);
+
+  const handleToggleStep = useCallback(async (stepId: string) => {
+    if (!currentTask) return;
+    
+    try {
+      // Update step in database
+      await toggleTaskStep(currentTask.id, stepId);
+      
+      // Update local state immediately for better UX
+      setCurrentTask(prev => {
+        if (!prev) return prev;
+        
+        const updatedSteps = prev.steps.map(step => 
+          step.id === stepId ? { ...step, done: !step.done } : step
+        );
+        
+        return { ...prev, steps: updatedSteps };
+      });
+    } catch (error) {
+      console.error('Failed to toggle step:', error);
+      // Could add a toast notification here
+    }
+  }, [currentTask]);
+
+  const handleDistractionCapture = async (distraction: string) => {
+    if (!currentSession) return;
+    
+    try {
+      // Save distraction to database
+      await captureDistraction(currentSession.id, distraction);
+      
+      // Add to local state for immediate UI feedback
+      const newDistraction: Distraction = {
+        id: `temp-${Date.now()}`,
+        userId: 'current-user',
+        sessionId: currentSession.id,
+        content: distraction,
+        createdAt: new Date().toISOString(),
+        handled: false,
+      };
+      
+      setDistractions(prev => [...prev, newDistraction]);
+      console.log('Captured distraction:', distraction);
+    } catch (error) {
+      console.error('Failed to capture distraction:', error);
+      // Still add to local state as fallback
+      const fallbackDistraction: Distraction = {
+        id: `temp-${Date.now()}`,
+        userId: 'current-user',
+        sessionId: currentSession?.id || '',
+        content: distraction,
+        createdAt: new Date().toISOString(),
+        handled: false,
+      };
+      setDistractions(prev => [...prev, fallbackDistraction]);
+    }
+  };
+
+  const isSessionActive = timer.isRunning || timer.isPaused;
+
+  // Auto-complete session when all task steps are done (only if we have a task with steps)
+  useEffect(() => {
+    console.log('🔍 Auto-completion effect triggered:', {
+      hasCurrentTask: !!currentTask,
+      taskTitle: currentTask?.title,
+      hasSteps: currentTask?.steps?.length,
+      isSessionActive,
+      timerIsRunning: timer.isRunning,
+      timerIsPaused: timer.isPaused,
+      timeRemaining: timer.timeRemaining
+    });
+    
+    // Only auto-complete if we have a task AND it has steps AND session is active
+    if (currentTask && currentTask.steps && currentTask.steps.length > 0 && isSessionActive) {
+      console.log('✅ Auto-completion conditions met - checking task completion:', {
+        taskTitle: currentTask.title,
+        hasSteps: currentTask.steps.length > 0,
+        steps: currentTask.steps.map(s => ({ content: s.content, done: s.done })),
+        isSessionActive
+      });
+      
+      const allStepsComplete = currentTask.steps.every(step => step.done);
+      console.log('📊 Step completion check:', { allStepsComplete, stepCount: currentTask.steps.length });
+      
+      if (allStepsComplete) {
+        // All steps are complete, auto-complete the session
+        console.log('🎯 All tasks complete! Auto-completing session...');
+        timer.skip(); // This will trigger handleSessionComplete
+      } else {
+        console.log('📝 Not all steps complete, continuing session...');
+      }
+    } else {
+      console.log('❌ Auto-completion disabled:', {
+        hasTask: !!currentTask,
+        hasSteps: currentTask?.steps?.length > 0,
+        isSessionActive,
+        reason: !currentTask ? 'No current task' : 
+                !currentTask.steps || currentTask.steps.length === 0 ? 'No steps' : 
+                !isSessionActive ? 'Session not active' : 'Unknown'
+      });
+    }
+  }, [currentTask, isSessionActive, timer]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
+        <header className="text-center mb-8 pt-8">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+            Focus
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Start sooner, stay focused, finish on time
+          </p>
+          
+          {/* Streak display */}
+          <div className="flex items-center justify-center mt-4 text-orange-600 dark:text-orange-400">
+            <FireIcon className="w-5 h-5 mr-2" />
+            <span className="font-semibold">{streak} day streak</span>
+          </div>
+        </header>
+
+        {/* Main content area */}
+        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-6">
+          {!isSessionActive ? (
+            /* Start state */
+            <div className="text-center">
+              <StartButton
+                task={currentTask || undefined}
+                onStart={handleStart}
+                isLoading={isStarting}
+              />
+            </div>
+          ) : (
+            /* Active session state */
+            <div className="text-center">
+              <TimerDisplay
+                timeRemaining={timer.timeRemaining}
+                totalTime={settings.defaultSessionDuration || 1500}
+                isRunning={timer.isRunning}
+                isPaused={timer.isPaused}
+              />
+              
+              {/* Current task info */}
+              {currentTask && (
+                <div className="mb-8">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                    {currentTask.title}
+                  </h2>
+                  {currentTask.steps && currentTask.steps.length > 0 && (
+                    <div className="text-left">
+                      <TaskSteps
+                        steps={currentTask.steps}
+                        onToggleStep={handleToggleStep}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Session controls */}
+              <div className="flex justify-center space-x-4 mb-6">
+                <button
+                  onClick={handlePause}
+                  className="flex items-center px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                >
+                  {timer.isPaused ? (
+                    <><PlayIcon className="w-5 h-5 mr-2" />Resume</>
+                  ) : (
+                    <><PauseIcon className="w-5 h-5 mr-2" />Pause</>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setIsDistractionCaptureOpen(true)}
+                  className="flex items-center px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                >
+                  <ExclamationTriangleIcon className="w-5 h-5 mr-2" />
+                  Not Now
+                </button>
+                
+                <button
+                  onClick={handleStopClick}
+                  className="flex items-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <StopIcon className="w-5 h-5 mr-2" />
+                  Stop
+                </button>
+              </div>
+              
+              {/* Session stats */}
+              <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                <p>Distractions captured: {distractions.length}</p>
+                {distractions.length > 0 && (
+                  <p className="mt-1">Latest: &quot;{distractions[distractions.length - 1].content}&quot;</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        
+        {/* App info */}
+        <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+          <p>🎯 {Math.floor((settings.defaultSessionDuration || 1500) / 60)}-minute focus sessions</p>
+          <p>✨ AI-powered task breakdown</p>
+          <p>📝 Distraction capture</p>
+        </div>
+      </div>
+      
+      {/* Distraction capture modal */}
+      <DistractionCapture
+        isOpen={isDistractionCaptureOpen}
+        onClose={() => setIsDistractionCaptureOpen(false)}
+        onCapture={handleDistractionCapture}
+        sessionId={currentSession?.id || ''}
+      />
+      
+      {/* Stop reason modal */}
+      <StopReasonModal
+        isOpen={isStopReasonModalOpen}
+        onClose={() => setIsStopReasonModalOpen(false)}
+        onConfirmStop={handleConfirmStop}
+      />
+      
+      {/* Session complete modal */}
+      {completedSessionData && (
+        <SessionCompleteModal
+          isOpen={isSessionCompleteModalOpen}
+          onClose={handleSessionCompleteModalClose}
+          onContinueTask={completedSessionData.task ? handleContinueTask : undefined}
+          sessionDuration={completedSessionData.duration}
+          taskTitle={completedSessionData.taskTitle}
+          completedSteps={completedSessionData.completedSteps}
+          totalSteps={completedSessionData.totalSteps}
+          streak={completedSessionData.streak}
+          isTaskComplete={completedSessionData.isTaskComplete}
+        />
+      )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={saveSettings}
+        currentSettings={settings}
+      />
+
+      {/* Task History Modal */}
+      <TaskHistory
+        isOpen={isTaskHistoryOpen}
+        onClose={() => setIsTaskHistoryOpen(false)}
+      />
+      
+      {/* Floating action buttons */}
+      <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-40">
+        {/* Settings button */}
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="w-14 h-14 bg-gradient-to-r from-gray-600 to-gray-700 dark:from-gray-700 dark:to-gray-800 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-300 dark:focus:ring-gray-600"
+          aria-label="Open settings"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          <Cog6ToothIcon className="w-6 h-6 mx-auto" />
+        </button>
+        
+        {/* Task history button */}
+        <button
+          onClick={() => setIsTaskHistoryOpen(true)}
+          className="w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-700 dark:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800"
+          aria-label="View task history"
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <TrophyIcon className="w-6 h-6 mx-auto" />
+        </button>
+      </div>
     </div>
   );
 }
