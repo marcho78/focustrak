@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Task, Session, Distraction } from '@/types';
-import StartButton from '@/components/StartButton';
+import { Task, Session, Distraction, TaskStep, BreakTimerState } from '@/types';
+import TaskCreationForm from '@/components/TaskCreationForm';
 import TimerDisplay from '@/components/TimerDisplay';
 import DistractionCapture from '@/components/DistractionCapture';
 import TaskSteps from '@/components/TaskSteps';
@@ -10,6 +10,8 @@ import StopReasonModal from '@/components/StopReasonModal';
 import SessionCompleteModal from '@/components/SessionCompleteModal';
 import TaskManager from '@/components/TaskManager';
 import SettingsModal from '@/components/SettingsModal';
+import BreakTimer from '@/components/BreakTimer';
+import BreakCompleteModal from '@/components/BreakCompleteModal';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
 import { 
@@ -49,8 +51,9 @@ function generateTaskSteps(title: string): string[] {
 }
 
 // API helper functions
-async function createTask(title: string, description?: string): Promise<Task> {
-  const steps = generateTaskSteps(title);
+async function createTask(title: string, description?: string, taskSteps?: TaskStep[]): Promise<Task> {
+  // Use provided steps or generate default ones
+  const steps = taskSteps ? taskSteps.map(step => step.content) : generateTaskSteps(title);
   
   const response = await fetch('/api/tasks', {
     method: 'POST',
@@ -134,6 +137,7 @@ async function toggleTaskStep(taskId: string, stepId: string): Promise<void> {
 }
 
 export default function Home() {
+  const [isClient, setIsClient] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [isDistractionCaptureOpen, setIsDistractionCaptureOpen] = useState(false);
@@ -144,6 +148,7 @@ export default function Home() {
   const [isSessionCompleteModalOpen, setIsSessionCompleteModalOpen] = useState(false);
   const [isTaskHistoryOpen, setIsTaskHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [taskManagerRefresh, setTaskManagerRefresh] = useState(0);
   const [completedSessionData, setCompletedSessionData] = useState<{
     duration: number;
     taskTitle?: string;
@@ -153,6 +158,24 @@ export default function Home() {
     isTaskComplete?: boolean;
     task?: Task | null;
   } | null>(null);
+  
+  // Break timer state
+  const [breakTimer, setBreakTimer] = useState<BreakTimerState>({
+    isActive: false,
+    timeRemaining: 0,
+    totalTime: 0,
+    type: 'short'
+  });
+  const [isBreakCompleteModalOpen, setIsBreakCompleteModalOpen] = useState(false);
+  const [completedBreakData, setCompletedBreakData] = useState<{
+    breakType: 'short' | 'long';
+    duration: number;
+  } | null>(null);
+  
+  // Fix hydration mismatch by ensuring client-side rendering
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   
   // Load settings
   const { settings, saveSettings, isLoaded } = useSettings();
@@ -285,11 +308,82 @@ export default function Home() {
     }
   }, [settings.defaultSessionDuration, streak]); // Include necessary dependencies
 
+  // Handle break timer completion
+  const handleBreakComplete = useCallback(() => {
+    console.log('🌟 Break timer completed!');
+    setBreakTimer(prev => ({ ...prev, isActive: false }));
+    
+    // Store completed break data
+    setCompletedBreakData({
+      breakType: breakTimer.type,
+      duration: breakTimer.totalTime
+    });
+    
+    // Show break completion modal
+    setIsBreakCompleteModalOpen(true);
+  }, [breakTimer.type, breakTimer.totalTime]);
+  
   // Create timer with the stable completion callback - wait for settings to load
   const timer = useTimer({
     duration: settings.defaultSessionDuration || 1500,
     onComplete: handleSessionComplete,
   });
+  
+  // Custom break timer implementation
+  const breakTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Start break timer
+  const startBreakTimer = useCallback(() => {
+    if (breakTimerIntervalRef.current) {
+      clearInterval(breakTimerIntervalRef.current);
+    }
+    
+    console.log(`🚀 Starting custom break timer with ${breakTimer.timeRemaining} seconds`);
+    
+    breakTimerIntervalRef.current = setInterval(() => {
+      setBreakTimer(prev => {
+        const newTimeRemaining = Math.max(0, prev.timeRemaining - 1);
+        
+        if (newTimeRemaining === 0) {
+          console.log('🎉 Break timer completed!');
+          if (breakTimerIntervalRef.current) {
+            clearInterval(breakTimerIntervalRef.current);
+            breakTimerIntervalRef.current = null;
+          }
+          // Call completion handler
+          setTimeout(() => handleBreakComplete(), 100);
+        }
+        
+        return {
+          ...prev,
+          timeRemaining: newTimeRemaining
+        };
+      });
+    }, 1000);
+  }, [breakTimer.timeRemaining, handleBreakComplete]);
+  
+  // Pause break timer
+  const pauseBreakTimer = useCallback(() => {
+    if (breakTimerIntervalRef.current) {
+      clearInterval(breakTimerIntervalRef.current);
+      breakTimerIntervalRef.current = null;
+    }
+  }, []);
+  
+  // Create fake break timer hook interface for compatibility
+  const breakTimerHook = {
+    isRunning: breakTimerIntervalRef.current !== null,
+    isPaused: breakTimer.isActive && breakTimerIntervalRef.current === null,
+    timeRemaining: breakTimer.timeRemaining,
+    start: startBreakTimer,
+    pause: pauseBreakTimer,
+    reset: () => {
+      if (breakTimerIntervalRef.current) {
+        clearInterval(breakTimerIntervalRef.current);
+        breakTimerIntervalRef.current = null;
+      }
+    }
+  };
 
   const handleStart = useCallback(async (task?: Task) => {
     console.log('🚀 Starting session with task:', task);
@@ -306,9 +400,15 @@ export default function Home() {
       // If it's a temporary task, create it in the database
       if (task.id.startsWith('temp-')) {
         if (task.title) {
-          console.log('Creating new task:', task.title);
-          currentTaskToUse = await createTask(task.title, task.description);
+          console.log('Creating new task:', task.title, 'with steps:', task.steps);
+          currentTaskToUse = await createTask(task.title, task.description, task.steps);
           console.log('Created task:', currentTaskToUse);
+          // Trigger TaskManager refresh so new task shows up in the list
+          console.log('🔄 Before incrementing taskManagerRefresh, current value:', taskManagerRefresh);
+          setTaskManagerRefresh(prev => {
+            console.log('🔄 Incrementing taskManagerRefresh from', prev, 'to', prev + 1);
+            return prev + 1;
+          });
         } else {
           throw new Error('Cannot create task without a title.');
         }
@@ -381,8 +481,8 @@ export default function Home() {
   };
 
   const handleSessionCompleteModalClose = () => {
-    setIsSessionCompleteModalOpen(false);
-    setCompletedSessionData(null);
+    // Force browser refresh to reset everything
+    window.location.reload();
   };
 
   const handleContinueTask = useCallback(() => {
@@ -441,6 +541,87 @@ export default function Home() {
     }
   }, [currentTask]);
 
+  const handleAddStep = useCallback(async (content: string) => {
+    if (!currentTask) return;
+    
+    try {
+      const response = await fetch(`/api/tasks/${currentTask.id}/steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        // Update local state immediately for better UX
+        setCurrentTask(prev => {
+          if (!prev) return prev;
+          
+          return { ...prev, steps: [...prev.steps, result.data] };
+        });
+      } else {
+        console.error('Failed to add step:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to add step:', error);
+    }
+  }, [currentTask]);
+
+  const handleEditStep = useCallback(async (stepId: string, content: string) => {
+    if (!currentTask) return;
+    
+    try {
+      const response = await fetch(`/api/tasks/${currentTask.id}/steps/${stepId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        // Update local state immediately for better UX
+        setCurrentTask(prev => {
+          if (!prev) return prev;
+          
+          const updatedSteps = prev.steps.map(step => 
+            step.id === stepId ? { ...step, content } : step
+          );
+          
+          return { ...prev, steps: updatedSteps };
+        });
+      } else {
+        console.error('Failed to edit step:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to edit step:', error);
+    }
+  }, [currentTask]);
+
+  const handleDeleteStep = useCallback(async (stepId: string) => {
+    if (!currentTask) return;
+    
+    try {
+      const response = await fetch(`/api/tasks/${currentTask.id}/steps/${stepId}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        // Update local state immediately for better UX
+        setCurrentTask(prev => {
+          if (!prev) return prev;
+          
+          const updatedSteps = prev.steps.filter(step => step.id !== stepId);
+          return { ...prev, steps: updatedSteps };
+        });
+      } else {
+        console.error('Failed to delete step:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to delete step:', error);
+    }
+  }, [currentTask]);
+
   const handleDistractionCapture = async (distraction: string) => {
     if (!currentSession) return;
     
@@ -475,7 +656,122 @@ export default function Home() {
     }
   };
 
+  // Break timer handlers
+  const handleTakeBreak = useCallback((breakType: 'short' | 'long') => {
+    console.log(`🌱 Starting ${breakType} break timer`);
+    console.log('📋 Current settings:', settings);
+    
+    // Determine break duration based on settings and type
+    const breakDuration = breakType === 'short' 
+      ? (settings.breakDuration || 300) // 5 minutes default
+      : (settings.longBreakDuration || 900); // 15 minutes default
+    
+    console.log(`⏱️ Break duration calculated: ${breakDuration} seconds (${Math.floor(breakDuration/60)}m ${breakDuration%60}s)`);
+    console.log(`🔧 Settings breakDuration: ${settings.breakDuration}, longBreakDuration: ${settings.longBreakDuration}`);
+    
+    // Store the current task before starting break
+    const taskToResume = completedSessionData?.task;
+    
+    // Close session complete modal
+    setIsSessionCompleteModalOpen(false);
+    setCompletedSessionData(null);
+    
+    // Set up break timer state
+    setBreakTimer({
+      isActive: true,
+      timeRemaining: breakDuration,
+      totalTime: breakDuration,
+      type: breakType
+    });
+    
+    // Store task for resumption after break
+    if (taskToResume) {
+      setCurrentTask(taskToResume);
+    }
+    
+    // Reset the break timer hook with new duration and start it immediately
+    // Use setTimeout to ensure state update completes first
+    setTimeout(() => {
+      console.log('🔄 Resetting and starting break timer hook');
+      console.log(`🎯 Break timer hook will reset to duration: ${breakDuration}`);
+      breakTimerHook.reset();
+      // Always start the break timer (user can pause if needed)
+      breakTimerHook.start();
+      console.log(`✅ Break timer hook started with timeRemaining: ${breakTimerHook.timeRemaining}`);
+    }, 150);
+  }, [settings.breakDuration, settings.longBreakDuration, settings.autoStartBreaks, breakTimerHook, completedSessionData]);
+  
+  const handleBreakPause = useCallback(() => {
+    if (breakTimerHook.isRunning && !breakTimerHook.isPaused) {
+      breakTimerHook.pause();
+    } else if (breakTimerHook.isPaused) {
+      breakTimerHook.start();
+    }
+  }, [breakTimerHook]);
+  
+  const handleBreakStop = useCallback(() => {
+    console.log('🛑 Stopping break timer');
+    breakTimerHook.reset();
+    setBreakTimer({
+      isActive: false,
+      timeRemaining: 0,
+      totalTime: 0,
+      type: 'short'
+    });
+  }, [breakTimerHook]);
+  
+  const handleStartNewSession = useCallback(() => {
+    console.log('🚀 Starting new session after break');
+    setIsBreakCompleteModalOpen(false);
+    setCompletedBreakData(null);
+    
+    // Reset break timer state
+    setBreakTimer({
+      isActive: false,
+      timeRemaining: 0,
+      totalTime: 0,
+      type: 'short'
+    });
+    
+    // If we have a current task, start a new focus session with it
+    if (currentTask) {
+      console.log('🔄 Resuming task after break:', currentTask.title);
+      // Reset task steps to allow working on them again
+      const resetTask = {
+        ...currentTask,
+        steps: currentTask.steps.map(step => ({ ...step, done: false }))
+      };
+      
+      setCurrentTask(resetTask);
+      
+      // Start new focus session with the task
+      setTimeout(() => {
+        handleStart(resetTask);
+      }, 100);
+    } else {
+      console.log('⚠️ No task to resume after break');
+    }
+  }, [currentTask, handleStart]);
+  
+  const handleBreakCompleteModalClose = useCallback(() => {
+    console.log('🚪 Closing break complete modal');
+    setIsBreakCompleteModalOpen(false);
+    setCompletedBreakData(null);
+    
+    // Reset break timer state
+    setBreakTimer({
+      isActive: false,
+      timeRemaining: 0,
+      totalTime: 0,
+      type: 'short'
+    });
+  }, []);
+  
+
+
   const isSessionActive = timer.isRunning || timer.isPaused;
+  const isBreakActive = breakTimer.isActive;
+  const isAnySessionActive = isSessionActive || isBreakActive;
 
   // Auto-complete session when all task steps are done (only if we have a task with steps)
   useEffect(() => {
@@ -520,8 +816,21 @@ export default function Home() {
     }
   }, [currentTask, isSessionActive, timer]);
 
+  // Don't render until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
+    <div className={`min-h-screen p-4 ${
+      isBreakActive 
+        ? 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900 dark:to-emerald-800'
+        : 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800'
+    }`}>
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <header className="text-center mb-8 pt-8">
@@ -540,13 +849,29 @@ export default function Home() {
         </header>
 
         {/* Main content area */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-6">
-          {!isSessionActive ? (
+        <div className={`rounded-3xl shadow-xl p-8 mb-6 ${
+          isBreakActive 
+            ? 'bg-gradient-to-br from-green-100 to-emerald-50 dark:from-green-800 dark:to-emerald-900'
+            : 'bg-white dark:bg-gray-800'
+        }`}>
+          {isBreakActive ? (
+            /* Break timer state */
+            <BreakTimer
+              timeRemaining={breakTimer.timeRemaining}
+              totalTime={breakTimer.totalTime}
+              isRunning={breakTimerHook.isRunning}
+              isPaused={breakTimerHook.isPaused}
+              breakType={breakTimer.type}
+              onPause={handleBreakPause}
+              onStop={handleBreakStop}
+            />
+          ) : !isSessionActive ? (
             /* Start state */
-            <div className="text-center">
-              <StartButton
+            <div>
+              <TaskCreationForm
                 task={currentTask || undefined}
                 onStart={handleStart}
+                onUpdateTask={(updatedTask) => setCurrentTask(updatedTask)}
                 isLoading={isStarting}
               />
             </div>
@@ -571,6 +896,10 @@ export default function Home() {
                       <TaskSteps
                         steps={currentTask.steps}
                         onToggleStep={handleToggleStep}
+                        onAddStep={handleAddStep}
+                        onEditStep={handleEditStep}
+                        onDeleteStep={handleDeleteStep}
+                        taskId={currentTask.id}
                       />
                     </div>
                   )}
@@ -647,12 +976,25 @@ export default function Home() {
           isOpen={isSessionCompleteModalOpen}
           onClose={handleSessionCompleteModalClose}
           onContinueTask={completedSessionData.task ? handleContinueTask : undefined}
+          onTakeBreak={handleTakeBreak}
           sessionDuration={completedSessionData.duration}
           taskTitle={completedSessionData.taskTitle}
           completedSteps={completedSessionData.completedSteps}
           totalSteps={completedSessionData.totalSteps}
           streak={completedSessionData.streak}
           isTaskComplete={completedSessionData.isTaskComplete}
+        />
+      )}
+      
+      {/* Break complete modal */}
+      {completedBreakData && (
+        <BreakCompleteModal
+          isOpen={isBreakCompleteModalOpen}
+          onClose={handleBreakCompleteModalClose}
+          onStartNewSession={handleStartNewSession}
+          breakType={completedBreakData.breakType}
+          breakDuration={completedBreakData.duration}
+          hasTaskToResume={!!currentTask}
         />
       )}
 
@@ -668,6 +1010,7 @@ export default function Home() {
       <TaskManager
         isOpen={isTaskHistoryOpen}
         onClose={() => setIsTaskHistoryOpen(false)}
+        refresh={taskManagerRefresh}
         onContinueTask={(task) => {
           // Convert TaskManager task format to our Task format
           const convertedTask: Task = {

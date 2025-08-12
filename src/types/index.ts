@@ -162,6 +162,15 @@ export interface UseTimerOptions {
   autoStart?: boolean;
 }
 
+export type SessionType = 'focus' | 'break';
+
+export interface BreakTimerState {
+  isActive: boolean;
+  timeRemaining: number;
+  totalTime: number;
+  type: 'short' | 'long';
+}
+
 export interface UseTimerReturn {
   timeRemaining: number;
   isRunning: boolean;

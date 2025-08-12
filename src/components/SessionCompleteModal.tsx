@@ -13,6 +13,7 @@ interface SessionCompleteModalProps {
   isOpen: boolean;
   onClose: () => void;
   onContinueTask?: () => void;
+  onTakeBreak?: (breakType: 'short' | 'long') => void;
   sessionDuration: number; // in seconds
   completedSteps?: number;
   totalSteps?: number;
@@ -25,6 +26,7 @@ export default function SessionCompleteModal({
   isOpen,
   onClose,
   onContinueTask,
+  onTakeBreak,
   sessionDuration,
   completedSteps = 0,
   totalSteps = 0,
@@ -154,13 +156,35 @@ export default function SessionCompleteModal({
                         <PlayIcon className="h-4 w-4 mr-2" />
                         Continue Task ({remainingSteps} steps left)
                       </button>
-                      <button
-                        type="button"
-                        className="w-full inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 transition-colors"
-                        onClick={onClose}
-                      >
-                        Take a Break
-                      </button>
+                      {onTakeBreak ? (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-600 text-center mb-2">Or take a break:</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex justify-center items-center rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
+                              onClick={() => onTakeBreak('short')}
+                            >
+                              ☕ Short Break
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex justify-center items-center rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
+                              onClick={() => onTakeBreak('long')}
+                            >
+                              🌿 Long Break
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="w-full inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 transition-colors"
+                          onClick={onClose}
+                        >
+                          Take a Break
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <button

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { StartButtonProps } from '@/types';
-import { PlayIcon, PlusIcon } from '@heroicons/react/24/solid';
+import { StartButtonProps, TaskStep } from '@/types';
+import { PlayIcon, PlusIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/solid';
 
 export default function StartButton({
   task,

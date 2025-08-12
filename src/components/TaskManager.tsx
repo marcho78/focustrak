@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ChevronDownIcon, 
   ChevronRightIcon,
@@ -13,7 +13,9 @@ import {
   TrashIcon,
   PauseCircleIcon,
   ExclamationTriangleIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  PlusIcon,
+  PencilIcon
 } from '@heroicons/react/24/solid';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -62,6 +64,7 @@ interface TaskManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onContinueTask?: (task: TaskItem) => void;
+  refresh?: number; // Added refresh prop to trigger task list reload
 }
 
 // Helper functions
@@ -133,7 +136,7 @@ const getTaskStatusInfo = (task: TaskItem) => {
   };
 };
 
-export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskManagerProps) {
+export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }: TaskManagerProps) {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
@@ -141,12 +144,25 @@ export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskMan
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastSeenRefresh = useRef<number | undefined>(undefined);
+  
+  // Step management state
+  const [newStepInputs, setNewStepInputs] = useState<{[taskId: string]: string}>({});
+  const [editingSteps, setEditingSteps] = useState<Set<string>>(new Set());
+  const [editStepValues, setEditStepValues] = useState<{[stepId: string]: string}>({});
+  const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) {
+      // Always fetch tasks when opening
       fetchTasks();
+      
+      // Check if refresh value has changed since we last saw it
+      if (refresh !== undefined && refresh !== lastSeenRefresh.current) {
+        lastSeenRefresh.current = refresh;
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, refresh]);
 
   const fetchTasks = async () => {
     setIsLoading(true);
@@ -219,6 +235,177 @@ export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskMan
     if (onContinueTask) {
       onContinueTask(task);
       onClose();
+    }
+  };
+
+  // Step management handlers
+  const addTaskStep = async (taskId: string) => {
+    const content = newStepInputs[taskId]?.trim();
+    if (!content) return;
+
+    setLoadingSteps(prev => new Set([...prev, taskId]));
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // Update the task steps in state
+        setTasks(prev => prev.map(task => {
+          if (task.id === taskId) {
+            return { ...task, steps: [...task.steps, result.data] };
+          }
+          return task;
+        }));
+        
+        // Clear input
+        setNewStepInputs(prev => ({ ...prev, [taskId]: '' }));
+      } else {
+        setError(result.error || 'Failed to add step');
+      }
+    } catch (err) {
+      setError('Failed to add step');
+      console.error('Error adding step:', err);
+    } finally {
+      setLoadingSteps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
+    }
+  };
+
+  const toggleStepDone = async (taskId: string, stepId: string) => {
+    setLoadingSteps(prev => new Set([...prev, stepId]));
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
+        method: 'PUT'
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // Update the step status in state
+        setTasks(prev => prev.map(task => {
+          if (task.id === taskId) {
+            return {
+              ...task,
+              steps: task.steps.map(step => 
+                step.id === stepId ? { ...step, done: !step.done } : step
+              )
+            };
+          }
+          return task;
+        }));
+      } else {
+        setError(result.error || 'Failed to update step');
+      }
+    } catch (err) {
+      setError('Failed to update step');
+      console.error('Error updating step:', err);
+    } finally {
+      setLoadingSteps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(stepId);
+        return newSet;
+      });
+    }
+  };
+
+  const startEditingStep = (stepId: string, currentContent: string) => {
+    setEditingSteps(prev => new Set([...prev, stepId]));
+    setEditStepValues(prev => ({ ...prev, [stepId]: currentContent }));
+  };
+
+  const cancelEditingStep = (stepId: string) => {
+    setEditingSteps(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(stepId);
+      return newSet;
+    });
+    setEditStepValues(prev => {
+      const { [stepId]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const saveStepEdit = async (taskId: string, stepId: string) => {
+    const content = editStepValues[stepId]?.trim();
+    if (!content) return;
+
+    setLoadingSteps(prev => new Set([...prev, stepId]));
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // Update the step content in state
+        setTasks(prev => prev.map(task => {
+          if (task.id === taskId) {
+            return {
+              ...task,
+              steps: task.steps.map(step => 
+                step.id === stepId ? { ...step, content } : step
+              )
+            };
+          }
+          return task;
+        }));
+        
+        // Exit edit mode
+        cancelEditingStep(stepId);
+      } else {
+        setError(result.error || 'Failed to update step');
+      }
+    } catch (err) {
+      setError('Failed to update step');
+      console.error('Error updating step:', err);
+    } finally {
+      setLoadingSteps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(stepId);
+        return newSet;
+      });
+    }
+  };
+
+  const deleteStep = async (taskId: string, stepId: string) => {
+    setLoadingSteps(prev => new Set([...prev, stepId]));
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // Remove the step from state
+        setTasks(prev => prev.map(task => {
+          if (task.id === taskId) {
+            return {
+              ...task,
+              steps: task.steps.filter(step => step.id !== stepId)
+            };
+          }
+          return task;
+        }));
+      } else {
+        setError(result.error || 'Failed to delete step');
+      }
+    } catch (err) {
+      setError('Failed to delete step');
+      console.error('Error deleting step:', err);
+    } finally {
+      setLoadingSteps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(stepId);
+        return newSet;
+      });
     }
   };
 
@@ -344,9 +531,11 @@ export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskMan
                             onChange={() => toggleTaskSelection(task.id)}
                             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mr-3"
                           />
-                          <button
+                          
+                          {/* Clickable area for expansion */}
+                          <div 
                             onClick={() => toggleTaskExpansion(task.id)}
-                            className="flex-1 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-lg p-2 -m-2"
+                            className="flex-1 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-lg p-2 -m-2 cursor-pointer"
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1 min-w-0">
@@ -400,20 +589,6 @@ export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskMan
                               </div>
                               
                               <div className="ml-3 flex-shrink-0 flex items-center space-x-2">
-                                {/* Continue Button for Incomplete Tasks */}
-                                {task.status !== 'completed' && onContinueTask && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleContinueTask(task);
-                                    }}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition-colors flex items-center"
-                                  >
-                                    <ArrowPathIcon className="w-3 h-3 mr-1" />
-                                    Continue
-                                  </button>
-                                )}
-                                
                                 {expandedTasks.has(task.id) ? (
                                   <ChevronDownIcon className="w-5 h-5 text-gray-400" />
                                 ) : (
@@ -421,34 +596,181 @@ export default function TaskManager({ isOpen, onClose, onContinueTask }: TaskMan
                                 )}
                               </div>
                             </div>
-                          </button>
+                          </div>
+                          
+                          {/* Continue Button for Incomplete Tasks - Outside the clickable area */}
+                          {task.status !== 'completed' && onContinueTask && (
+                            <button
+                              onClick={() => handleContinueTask(task)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition-colors flex items-center ml-2"
+                            >
+                              <ArrowPathIcon className="w-3 h-3 mr-1" />
+                              Continue
+                            </button>
+                          )}
                         </div>
 
                         {/* Expanded Content */}
                         {expandedTasks.has(task.id) && (
                           <div className="border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
                             {/* Task Steps */}
-                            {task.steps && task.steps.length > 0 && (
-                              <div className="p-4 border-b border-gray-200 dark:border-gray-600">
-                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Task Steps</h4>
-                                <div className="space-y-2">
-                                  {task.steps.map((step) => (
-                                    <div key={step.id} className="flex items-center space-x-2 text-sm">
-                                      <div className="flex-shrink-0">
-                                        {step.done ? (
-                                          <CheckIcon className="w-4 h-4 text-green-500" />
-                                        ) : (
-                                          <XMarkIcon className="w-4 h-4 text-gray-400" />
-                                        )}
-                                      </div>
-                                      <span className={`flex-1 ${step.done ? 'text-gray-500 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
-                                        {step.content}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
+                            <div className="p-4 border-b border-gray-200 dark:border-gray-600">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Task Steps</h4>
+                                {activeTab === 'incomplete' && (
+                                  <button
+                                    onClick={() => {
+                                      const currentInput = newStepInputs[task.id] || '';
+                                      if (!currentInput) {
+                                        setNewStepInputs(prev => ({ ...prev, [task.id]: '' }));
+                                        // Focus the input field
+                                        setTimeout(() => {
+                                          const input = document.getElementById(`step-input-${task.id}`);
+                                          input?.focus();
+                                        }, 0);
+                                      }
+                                    }}
+                                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm flex items-center"
+                                  >
+                                    <PlusIcon className="w-4 h-4 mr-1" />
+                                    Add Step
+                                  </button>
+                                )}
                               </div>
-                            )}
+                              
+                              <div className="space-y-2">
+                                {task.steps.map((step) => (
+                                  <div key={step.id} className="flex items-center space-x-2 text-sm group">
+                                    <button
+                                      onClick={() => toggleStepDone(task.id, step.id)}
+                                      disabled={loadingSteps.has(step.id)}
+                                      className="flex-shrink-0 hover:scale-110 transition-transform"
+                                    >
+                                      {step.done ? (
+                                        <CheckIcon className="w-4 h-4 text-green-500" />
+                                      ) : (
+                                        <XMarkIcon className="w-4 h-4 text-gray-400 hover:text-blue-500" />
+                                      )}
+                                    </button>
+                                    
+                                    {editingSteps.has(step.id) ? (
+                                      <div className="flex-1 flex items-center space-x-2">
+                                        <input
+                                          type="text"
+                                          value={editStepValues[step.id] || ''}
+                                          onChange={(e) => setEditStepValues(prev => ({ 
+                                            ...prev, 
+                                            [step.id]: e.target.value 
+                                          }))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              saveStepEdit(task.id, step.id);
+                                            } else if (e.key === 'Escape') {
+                                              cancelEditingStep(step.id);
+                                            }
+                                          }}
+                                          className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                          autoFocus
+                                        />
+                                        <button
+                                          onClick={() => saveStepEdit(task.id, step.id)}
+                                          disabled={loadingSteps.has(step.id)}
+                                          className="text-green-600 hover:text-green-800 transition-colors"
+                                        >
+                                          <CheckIcon className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => cancelEditingStep(step.id)}
+                                          className="text-gray-600 hover:text-gray-800 transition-colors"
+                                        >
+                                          <XMarkIcon className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <span className={`flex-1 ${step.done ? 'text-gray-500 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
+                                          {step.content}
+                                        </span>
+                                        {activeTab === 'incomplete' && (
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+                                            <button
+                                              onClick={() => startEditingStep(step.id, step.content)}
+                                              className="text-gray-400 hover:text-blue-500 transition-colors"
+                                            >
+                                              <PencilIcon className="w-3 h-3" />
+                                            </button>
+                                            <button
+                                              onClick={() => deleteStep(task.id, step.id)}
+                                              disabled={loadingSteps.has(step.id)}
+                                              className="text-gray-400 hover:text-red-500 transition-colors"
+                                            >
+                                              <TrashIcon className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                    
+                                    {loadingSteps.has(step.id) && (
+                                      <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600"></div>
+                                    )}
+                                  </div>
+                                ))}
+                                
+                                {task.steps.length === 0 && (
+                                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                                    No steps yet. Add your first step above!
+                                  </p>
+                                )}
+                                
+                                {/* Add new step input */}
+                                {activeTab === 'incomplete' && newStepInputs[task.id] !== undefined && (
+                                  <div className="flex items-center space-x-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                                    <input
+                                      id={`step-input-${task.id}`}
+                                      type="text"
+                                      value={newStepInputs[task.id] || ''}
+                                      onChange={(e) => setNewStepInputs(prev => ({ 
+                                        ...prev, 
+                                        [task.id]: e.target.value 
+                                      }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          addTaskStep(task.id);
+                                        } else if (e.key === 'Escape') {
+                                          setNewStepInputs(prev => {
+                                            const { [task.id]: _, ...rest } = prev;
+                                            return rest;
+                                          });
+                                        }
+                                      }}
+                                      placeholder="Enter new step..."
+                                      className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                      onClick={() => addTaskStep(task.id)}
+                                      disabled={loadingSteps.has(task.id) || !newStepInputs[task.id]?.trim()}
+                                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+                                    >
+                                      {loadingSteps.has(task.id) ? (
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                      ) : (
+                                        <>Add</>
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() => setNewStepInputs(prev => {
+                                        const { [task.id]: _, ...rest } = prev;
+                                        return rest;
+                                      })}
+                                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                                    >
+                                      <XMarkIcon className="w-5 h-5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             
                             {/* Sessions */}
                             <div className="p-4">

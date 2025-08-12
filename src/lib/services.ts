@@ -124,6 +124,36 @@ export class TaskService {
     );
   }
 
+  static async createTaskStep(taskId: string, content: string): Promise<TaskStep> {
+    // Get the next order index
+    const orderResult = await query(
+      `SELECT COALESCE(MAX(order_index), -1) + 1 as next_order FROM task_steps WHERE task_id = $1`,
+      [taskId]
+    );
+    const nextOrder = orderResult.rows[0].next_order;
+
+    const result = await query(
+      `INSERT INTO task_steps (task_id, content, order_index) VALUES ($1, $2, $3) RETURNING *`,
+      [taskId, content, nextOrder]
+    );
+    
+    return this.mapTaskStepFromDb(result.rows[0]);
+  }
+
+  static async deleteTaskStep(stepId: string): Promise<void> {
+    await query(
+      `DELETE FROM task_steps WHERE id = $1`,
+      [stepId]
+    );
+  }
+
+  static async updateTaskStep(stepId: string, content: string): Promise<void> {
+    await query(
+      `UPDATE task_steps SET content = $1, updated_at = NOW() WHERE id = $2`,
+      [content, stepId]
+    );
+  }
+
   private static mapTaskFromDb(row: any): Task {
     return {
       id: row.id,
