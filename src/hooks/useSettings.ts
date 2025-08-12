@@ -8,7 +8,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   theme: 'system',
   breakDuration: 300, // 5 minutes
   longBreakDuration: 900, // 15 minutes
-  autoStartBreaks: false,
+  autoStartBreaks: true, // Enabled by default for testing
 };
 
 const STORAGE_KEY = 'focus-app-settings';

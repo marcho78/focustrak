@@ -170,7 +170,9 @@ export default function Home() {
   const [completedBreakData, setCompletedBreakData] = useState<{
     breakType: 'short' | 'long';
     duration: number;
+    taskToResume?: Task | null;
   } | null>(null);
+  
   
   // Fix hydration mismatch by ensuring client-side rendering
   useEffect(() => {
@@ -204,6 +206,172 @@ export default function Home() {
     setStreakRef.current = setStreak;
   }, []);
 
+  // Custom break timer implementation
+  const breakTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Handle break timer completion
+  const handleBreakComplete = useCallback(() => {
+    // Store the current task before any state updates
+    const taskForResumption = currentTask;
+    
+    // Get current break timer state to avoid stale closures
+    setBreakTimer(prev => {
+      // Only complete if time actually reached zero and we're active
+      if (prev.timeRemaining === 0 && prev.isActive) {
+        // Store completed break data with the task we captured earlier
+        setCompletedBreakData({
+          breakType: prev.type,
+          duration: prev.totalTime,
+          taskToResume: taskForResumption // Use the task we captured before state updates
+        });
+        
+        // Show break completion modal
+        setIsBreakCompleteModalOpen(true);
+        
+        return { ...prev, isActive: false };
+      } else {
+        return prev;
+      }
+    });
+  }, [currentTask]);
+  
+  // Start break timer
+  const startBreakTimer = useCallback(() => {
+    if (breakTimerIntervalRef.current) {
+      clearInterval(breakTimerIntervalRef.current);
+    }
+    
+    setBreakTimer(currentState => {
+      console.log(`🚀 Starting custom break timer with ${currentState.timeRemaining} seconds`);
+      return currentState;
+    });
+    
+    breakTimerIntervalRef.current = setInterval(() => {
+      setBreakTimer(prev => {
+        const newTimeRemaining = Math.max(0, prev.timeRemaining - 1);
+        
+        if (newTimeRemaining === 0) {
+          console.log('🎉 Break timer completed!');
+          if (breakTimerIntervalRef.current) {
+            clearInterval(breakTimerIntervalRef.current);
+            breakTimerIntervalRef.current = null;
+          }
+          // Call completion handler
+          setTimeout(() => handleBreakComplete(), 100);
+        }
+        
+        return {
+          ...prev,
+          timeRemaining: newTimeRemaining
+        };
+      });
+    }, 1000);
+  }, [handleBreakComplete]);
+  
+  // Pause break timer
+  const pauseBreakTimer = useCallback(() => {
+    if (breakTimerIntervalRef.current) {
+      clearInterval(breakTimerIntervalRef.current);
+      breakTimerIntervalRef.current = null;
+    }
+  }, []);
+  
+  // Create fake break timer hook interface for compatibility
+  const breakTimerHook = {
+    isRunning: breakTimerIntervalRef.current !== null,
+    isPaused: breakTimer.isActive && breakTimerIntervalRef.current === null,
+    timeRemaining: breakTimer.timeRemaining,
+    start: startBreakTimer,
+    pause: pauseBreakTimer,
+    reset: () => {
+      if (breakTimerIntervalRef.current) {
+        clearInterval(breakTimerIntervalRef.current);
+        breakTimerIntervalRef.current = null;
+      }
+    }
+  };
+  
+  // Break timer handlers
+  const handleTakeBreak = useCallback((breakType: 'short' | 'long') => {
+    console.log(`🌱 Starting ${breakType} break timer`);
+    console.log('📋 Current settings:', settings);
+    console.log('🔍 State before break starts:', {
+      currentTask: currentTask ? { id: currentTask.id, title: currentTask.title } : null,
+      hasCurrentTask: !!currentTask,
+      completedSessionData: completedSessionData ? {
+        taskTitle: completedSessionData.taskTitle,
+        hasTask: !!completedSessionData.task,
+        taskForResumption: completedSessionData.task ? {
+          id: completedSessionData.task.id,
+          title: completedSessionData.task.title
+        } : null
+      } : null
+    });
+    
+    // Determine break duration based on settings and type
+    const breakDuration = breakType === 'short' 
+      ? (settings.breakDuration || 300) // 5 minutes default
+      : (settings.longBreakDuration || 900); // 15 minutes default
+    
+    console.log(`⏱️ Break duration calculated: ${breakDuration} seconds (${Math.floor(breakDuration/60)}m ${breakDuration%60}s)`);
+    console.log(`🔧 Settings breakDuration: ${settings.breakDuration}, longBreakDuration: ${settings.longBreakDuration}`);
+    
+    // Store the current task before starting break
+    const taskToResume = completedSessionData?.task;
+    console.log('📤 Task to resume after break:', {
+      hasTaskToResume: !!taskToResume,
+      taskDetails: taskToResume ? {
+        id: taskToResume.id,
+        title: taskToResume.title,
+        steps: taskToResume.steps?.length
+      } : null
+    });
+    
+    // Close session complete modal
+    setIsSessionCompleteModalOpen(false);
+    setCompletedSessionData(null);
+    
+    // Set up break timer state
+    setBreakTimer({
+      isActive: true,
+      timeRemaining: breakDuration,
+      totalTime: breakDuration,
+      type: breakType
+    });
+    
+    // Store task for resumption after break
+    if (taskToResume) {
+      console.log('📥 Setting current task for resumption:', taskToResume.title);
+      setCurrentTask(taskToResume);
+    } else {
+      console.log('⚠️ No task available for resumption - keeping current task as is');
+    }
+    
+    // Reset the break timer hook with new duration
+    // Use setTimeout to ensure state update completes first
+    setTimeout(() => {
+      console.log('🔄 Resetting break timer hook');
+      console.log(`🎯 Break timer hook will reset to duration: ${breakDuration}`);
+      console.log(`🔧 Auto-start breaks setting: ${settings.autoStartBreaks}`);
+      breakTimerHook.reset();
+      
+      // Only start automatically if auto-start is enabled
+      if (settings.autoStartBreaks) {
+        console.log('✅ Auto-starting break timer');
+        breakTimerHook.start();
+        console.log(`✅ Break timer hook started with timeRemaining: ${breakTimerHook.timeRemaining}`);
+      } else {
+        console.log('⏸️ Auto-start disabled - break timer ready but not started');
+      }
+      
+      // Log final state after break setup
+      setTimeout(() => {
+        console.log('🏁 Break setup completed. Final state:');
+        console.log('📊 Current task after break setup:', currentTask ? { id: currentTask.id, title: currentTask.title } : null);
+      }, 100);
+    }, 150);
+  }, [settings.breakDuration, settings.longBreakDuration, settings.autoStartBreaks, breakTimerHook, completedSessionData, currentTask]);
+  
   // Stable callback function
   const handleSessionComplete = useCallback(async () => {
     console.log('🔥 handleSessionComplete called!', { currentSession: currentSessionRef.current });
@@ -277,8 +445,17 @@ export default function Home() {
           task: !isTaskFullyComplete ? task : null // Keep task for resumption if not complete
         });
         
-        // Show completion modal
-        setIsSessionCompleteModalOpen(true);
+        // Check if we should auto-start a break or show the completion modal
+        if (settings.autoStartBreaks) {
+          console.log('🔄 Auto-starting break after session completion');
+          // Auto-start a short break
+          setTimeout(() => {
+            handleTakeBreak('short');
+          }, 500); // Small delay to ensure state updates complete
+        } else {
+          // Show completion modal for user to choose
+          setIsSessionCompleteModalOpen(true);
+        }
         
       } catch (error) {
         console.error('Failed to complete session:', error);
@@ -306,84 +483,13 @@ export default function Home() {
     } else {
       console.log('⚠️ handleSessionComplete called but no current session');
     }
-  }, [settings.defaultSessionDuration, streak]); // Include necessary dependencies
+  }, [settings.defaultSessionDuration, settings.autoStartBreaks, streak, handleTakeBreak]); // Include necessary dependencies
 
-  // Handle break timer completion
-  const handleBreakComplete = useCallback(() => {
-    console.log('🌟 Break timer completed!');
-    setBreakTimer(prev => ({ ...prev, isActive: false }));
-    
-    // Store completed break data
-    setCompletedBreakData({
-      breakType: breakTimer.type,
-      duration: breakTimer.totalTime
-    });
-    
-    // Show break completion modal
-    setIsBreakCompleteModalOpen(true);
-  }, [breakTimer.type, breakTimer.totalTime]);
-  
   // Create timer with the stable completion callback - wait for settings to load
   const timer = useTimer({
     duration: settings.defaultSessionDuration || 1500,
     onComplete: handleSessionComplete,
   });
-  
-  // Custom break timer implementation
-  const breakTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Start break timer
-  const startBreakTimer = useCallback(() => {
-    if (breakTimerIntervalRef.current) {
-      clearInterval(breakTimerIntervalRef.current);
-    }
-    
-    console.log(`🚀 Starting custom break timer with ${breakTimer.timeRemaining} seconds`);
-    
-    breakTimerIntervalRef.current = setInterval(() => {
-      setBreakTimer(prev => {
-        const newTimeRemaining = Math.max(0, prev.timeRemaining - 1);
-        
-        if (newTimeRemaining === 0) {
-          console.log('🎉 Break timer completed!');
-          if (breakTimerIntervalRef.current) {
-            clearInterval(breakTimerIntervalRef.current);
-            breakTimerIntervalRef.current = null;
-          }
-          // Call completion handler
-          setTimeout(() => handleBreakComplete(), 100);
-        }
-        
-        return {
-          ...prev,
-          timeRemaining: newTimeRemaining
-        };
-      });
-    }, 1000);
-  }, [breakTimer.timeRemaining, handleBreakComplete]);
-  
-  // Pause break timer
-  const pauseBreakTimer = useCallback(() => {
-    if (breakTimerIntervalRef.current) {
-      clearInterval(breakTimerIntervalRef.current);
-      breakTimerIntervalRef.current = null;
-    }
-  }, []);
-  
-  // Create fake break timer hook interface for compatibility
-  const breakTimerHook = {
-    isRunning: breakTimerIntervalRef.current !== null,
-    isPaused: breakTimer.isActive && breakTimerIntervalRef.current === null,
-    timeRemaining: breakTimer.timeRemaining,
-    start: startBreakTimer,
-    pause: pauseBreakTimer,
-    reset: () => {
-      if (breakTimerIntervalRef.current) {
-        clearInterval(breakTimerIntervalRef.current);
-        breakTimerIntervalRef.current = null;
-      }
-    }
-  };
 
   const handleStart = useCallback(async (task?: Task) => {
     console.log('🚀 Starting session with task:', task);
@@ -656,50 +762,6 @@ export default function Home() {
     }
   };
 
-  // Break timer handlers
-  const handleTakeBreak = useCallback((breakType: 'short' | 'long') => {
-    console.log(`🌱 Starting ${breakType} break timer`);
-    console.log('📋 Current settings:', settings);
-    
-    // Determine break duration based on settings and type
-    const breakDuration = breakType === 'short' 
-      ? (settings.breakDuration || 300) // 5 minutes default
-      : (settings.longBreakDuration || 900); // 15 minutes default
-    
-    console.log(`⏱️ Break duration calculated: ${breakDuration} seconds (${Math.floor(breakDuration/60)}m ${breakDuration%60}s)`);
-    console.log(`🔧 Settings breakDuration: ${settings.breakDuration}, longBreakDuration: ${settings.longBreakDuration}`);
-    
-    // Store the current task before starting break
-    const taskToResume = completedSessionData?.task;
-    
-    // Close session complete modal
-    setIsSessionCompleteModalOpen(false);
-    setCompletedSessionData(null);
-    
-    // Set up break timer state
-    setBreakTimer({
-      isActive: true,
-      timeRemaining: breakDuration,
-      totalTime: breakDuration,
-      type: breakType
-    });
-    
-    // Store task for resumption after break
-    if (taskToResume) {
-      setCurrentTask(taskToResume);
-    }
-    
-    // Reset the break timer hook with new duration and start it immediately
-    // Use setTimeout to ensure state update completes first
-    setTimeout(() => {
-      console.log('🔄 Resetting and starting break timer hook');
-      console.log(`🎯 Break timer hook will reset to duration: ${breakDuration}`);
-      breakTimerHook.reset();
-      // Always start the break timer (user can pause if needed)
-      breakTimerHook.start();
-      console.log(`✅ Break timer hook started with timeRemaining: ${breakTimerHook.timeRemaining}`);
-    }, 150);
-  }, [settings.breakDuration, settings.longBreakDuration, settings.autoStartBreaks, breakTimerHook, completedSessionData]);
   
   const handleBreakPause = useCallback(() => {
     if (breakTimerHook.isRunning && !breakTimerHook.isPaused) {
@@ -722,7 +784,16 @@ export default function Home() {
   
   const handleStartNewSession = useCallback(() => {
     console.log('🚀 Starting new session after break');
+    
+    // Get the task to resume from completed break data
+    const taskToResume = completedBreakData?.taskToResume;
+    console.log('📋 Task to resume from break data:', {
+      hasTask: !!taskToResume,
+      taskTitle: taskToResume?.title
+    });
+    
     setIsBreakCompleteModalOpen(false);
+    const savedBreakData = completedBreakData; // Save reference before clearing
     setCompletedBreakData(null);
     
     // Reset break timer state
@@ -733,13 +804,13 @@ export default function Home() {
       type: 'short'
     });
     
-    // If we have a current task, start a new focus session with it
-    if (currentTask) {
-      console.log('🔄 Resuming task after break:', currentTask.title);
+    // If we have a task to resume, start a new focus session with it
+    if (taskToResume) {
+      console.log('🔄 Resuming task after break:', taskToResume.title);
       // Reset task steps to allow working on them again
       const resetTask = {
-        ...currentTask,
-        steps: currentTask.steps.map(step => ({ ...step, done: false }))
+        ...taskToResume,
+        steps: taskToResume.steps.map(step => ({ ...step, done: false }))
       };
       
       setCurrentTask(resetTask);
@@ -751,7 +822,7 @@ export default function Home() {
     } else {
       console.log('⚠️ No task to resume after break');
     }
-  }, [currentTask, handleStart]);
+  }, [completedBreakData, handleStart]);
   
   const handleBreakCompleteModalClose = useCallback(() => {
     console.log('🚪 Closing break complete modal');
@@ -994,7 +1065,7 @@ export default function Home() {
           onStartNewSession={handleStartNewSession}
           breakType={completedBreakData.breakType}
           breakDuration={completedBreakData.duration}
-          hasTaskToResume={!!currentTask}
+          hasTaskToResume={!!completedBreakData.taskToResume}
         />
       )}
 
