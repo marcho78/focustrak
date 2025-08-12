@@ -20,34 +20,6 @@ interface TaskCreationFormProps {
   disabled?: boolean;
 }
 
-// AI function for generating task steps
-function generateTaskSteps(title: string): string[] {
-  const commonSteps = {
-    'write': ['Open document', 'Write outline', 'Write first draft'],
-    'read': ['Find materials', 'Set up reading space', 'Start reading'],
-    'code': ['Set up development environment', 'Create basic structure', 'Implement first feature'],
-    'study': ['Gather materials', 'Create study space', 'Review first topic'],
-    'email': ['Open email client', 'Sort by priority', 'Reply to first email'],
-    'design': ['Open design tool', 'Create new project', 'Start with wireframe'],
-    'plan': ['Define objectives', 'List requirements', 'Create timeline'],
-    'research': ['Identify sources', 'Gather information', 'Analyze findings'],
-    'meeting': ['Prepare agenda', 'Review materials', 'Join meeting'],
-  };
-  
-  const titleLower = title.toLowerCase();
-  for (const [key, steps] of Object.entries(commonSteps)) {
-    if (titleLower.includes(key)) {
-      return steps;
-    }
-  }
-  
-  // Default generic steps
-  return [
-    'Set up workspace and materials',
-    'Start with the smallest first step',
-    'Make initial progress'
-  ];
-}
 
 export default function TaskCreationForm({
   task: existingTask,
@@ -63,23 +35,9 @@ export default function TaskCreationForm({
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editingStepValue, setEditingStepValue] = useState('');
   const [showForm, setShowForm] = useState(!existingTask);
+  const [useAiBreakdown, setUseAiBreakdown] = useState(false);
+  const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
 
-  // Generate AI steps when title changes
-  useEffect(() => {
-    if (taskTitle.trim() && steps.length === 0 && !existingTask) {
-      const aiSteps = generateTaskSteps(taskTitle);
-      const generatedSteps: TaskStep[] = aiSteps.map((content, index) => ({
-        id: `temp-step-${index}`,
-        taskId: 'temp',
-        content,
-        done: false,
-        orderIndex: index,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
-      setSteps(generatedSteps);
-    }
-  }, [taskTitle, existingTask]);
 
   const createTask = (): Task => {
     return {
@@ -96,10 +54,19 @@ export default function TaskCreationForm({
     };
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!taskTitle.trim()) return;
-    const task = createTask();
-    onStart(task);
+    
+    // If AI breakdown is enabled and we don't have steps yet, generate them first
+    if (useAiBreakdown && steps.length === 0) {
+      await handleGenerateAiSteps();
+      // Create task with the newly generated steps
+      const task = createTask();
+      onStart(task);
+    } else {
+      const task = createTask();
+      onStart(task);
+    }
   };
 
   const handleAddStep = () => {
@@ -172,26 +139,53 @@ export default function TaskCreationForm({
     setEditingStepValue('');
   };
 
-  const handleGenerateSteps = () => {
+
+  const handleGenerateAiSteps = async () => {
     if (!taskTitle.trim()) return;
     
-    const aiSteps = generateTaskSteps(taskTitle);
-    const generatedSteps: TaskStep[] = aiSteps.map((content, index) => ({
-      id: `temp-step-${Date.now()}-${index}`,
-      taskId: existingTask?.id || 'temp',
-      content,
-      done: false,
-      orderIndex: steps.length + index,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
+    setIsGeneratingSteps(true);
+    try {
+      const response = await fetch('/api/tasks/breakdown', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          taskTitle: taskTitle,
+          taskDescription: taskDescription || undefined,
+        }),
+      });
 
-    const updatedSteps = [...steps, ...generatedSteps];
-    setSteps(updatedSteps);
+      if (!response.ok) {
+        throw new Error('Failed to generate AI breakdown');
+      }
 
-    if (existingTask && onUpdateTask) {
-      const updatedTask = { ...existingTask, steps: updatedSteps };
-      onUpdateTask(updatedTask);
+      const data = await response.json();
+      const aiSteps: string[] = data.data;
+      
+      const generatedSteps: TaskStep[] = aiSteps.map((content, index) => ({
+        id: `temp-step-${Date.now()}-${index}`,
+        taskId: existingTask?.id || 'temp',
+        content,
+        done: false,
+        orderIndex: steps.length + index,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+
+      const updatedSteps = [...steps, ...generatedSteps];
+      setSteps(updatedSteps);
+
+      if (existingTask && onUpdateTask) {
+        const updatedTask = { ...existingTask, steps: updatedSteps };
+        onUpdateTask(updatedTask);
+      }
+    } catch (error) {
+      console.error('Error generating AI steps:', error);
+      // Show error to user instead of falling back
+      alert('Failed to generate AI steps. Please check your internet connection and try again.');
+    } finally {
+      setIsGeneratingSteps(false);
     }
   };
 
@@ -320,17 +314,57 @@ export default function TaskCreationForm({
         />
       </div>
 
+      {/* AI Breakdown Toggle */}
+      <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+        <div className="flex items-start space-x-3">
+          <div className="flex items-center">
+            <input
+              id="ai-breakdown"
+              type="checkbox"
+              checked={useAiBreakdown}
+              onChange={(e) => {
+                setUseAiBreakdown(e.target.checked);
+                if (!e.target.checked && steps.length > 0) {
+                  // Clear existing steps when disabling AI breakdown
+                  setSteps([]);
+                }
+              }}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <label htmlFor="ai-breakdown" className="block text-sm font-medium text-blue-900 dark:text-blue-100 cursor-pointer">
+              <SparklesIcon className="w-4 h-4 inline mr-1" />
+              AI-Powered Task Breakdown
+            </label>
+            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+              Let AI analyze your task and create 3-5 actionable steps designed to help you overcome procrastination and build momentum.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Steps Section */}
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-gray-900 dark:text-white">Task Steps</h3>
-          {steps.length === 0 && taskTitle.trim() && (
+          {steps.length === 0 && taskTitle.trim() && useAiBreakdown && (
             <button
-              onClick={handleGenerateSteps}
-              className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+              onClick={handleGenerateAiSteps}
+              disabled={isGeneratingSteps}
+              className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:opacity-50"
             >
-              <SparklesIcon className="w-4 h-4 mr-1" />
-              Generate Steps
+              {isGeneratingSteps ? (
+                <>
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <SparklesIcon className="w-4 h-4 mr-1" />
+                  Generate AI Steps
+                </>
+              )}
             </button>
           )}
         </div>
@@ -431,7 +465,10 @@ export default function TaskCreationForm({
 
         {steps.length === 0 && (
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-3">
-            ✨ Add steps to break down your task into manageable pieces
+            {useAiBreakdown 
+              ? '🤖 Click "Generate AI Steps" above to get AI-powered task breakdown'
+              : '✨ Enable AI breakdown above or add steps manually'
+            }
           </p>
         )}
       </div>
@@ -440,13 +477,13 @@ export default function TaskCreationForm({
       <div className="flex space-x-3">
         <button
           onClick={handleStart}
-          disabled={!taskTitle.trim() || isLoading || disabled}
+          disabled={!taskTitle.trim() || isLoading || disabled || isGeneratingSteps}
           className="flex-1 flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
         >
-          {isLoading ? (
+          {isLoading || isGeneratingSteps ? (
             <>
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-              Starting...
+              {isGeneratingSteps ? 'Generating Steps...' : 'Starting...'}
             </>
           ) : (
             <>
