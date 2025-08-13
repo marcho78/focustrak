@@ -3,19 +3,33 @@ import { query } from '@/lib/db';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: taskId } = params;
+    const { id: taskId } = await params;
     const body = await request.json();
-    const { status, completedAt } = body;
+    const { status, completedAt, addTimeSpent } = body;
     
-    // Update task status
+    // Build update query based on what's being updated
+    let updateFields = ['status = $1', 'updated_at = $2'];
+    let updateValues = [status, completedAt || new Date().toISOString()];
+    let paramIndex = 3;
+    
+    // If we're adding time spent (from session completion)
+    if (addTimeSpent !== undefined) {
+      updateFields.push(`total_time_spent = COALESCE(total_time_spent, 0) + $${paramIndex}`);
+      updateValues.push(addTimeSpent);
+      paramIndex++;
+    }
+    
+    updateValues.push(taskId);
+    
+    // Update task
     await query(
       `UPDATE tasks 
-       SET status = $1, updated_at = $2
-       WHERE id = $3`,
-      [status, completedAt || new Date().toISOString(), taskId]
+       SET ${updateFields.join(', ')}
+       WHERE id = $${paramIndex}`,
+      updateValues
     );
 
     // Get updated task with steps

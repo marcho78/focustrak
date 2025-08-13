@@ -166,6 +166,7 @@ export class TaskService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       estimatedSessions: row.estimated_sessions,
+      totalTimeSpent: row.total_time_spent || 0,
       steps: [] // Will be populated separately
     };
   }

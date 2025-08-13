@@ -8,7 +8,8 @@ import {
   PlusIcon,
   PencilIcon,
   TrashIcon,
-  XMarkIcon 
+  XMarkIcon,
+  SparklesIcon 
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 
@@ -18,8 +19,12 @@ interface TaskStepsProps {
   onAddStep?: (content: string) => void;
   onEditStep?: (stepId: string, content: string) => void;
   onDeleteStep?: (stepId: string) => void;
+  onGenerateSteps?: () => void;
   readonly?: boolean;
   taskId?: string;
+  taskTitle?: string;
+  taskDescription?: string;
+  isGeneratingSteps?: boolean;
 }
 
 export default function TaskSteps({ 
@@ -28,8 +33,12 @@ export default function TaskSteps({
   onAddStep, 
   onEditStep, 
   onDeleteStep, 
+  onGenerateSteps,
   readonly = false, 
-  taskId 
+  taskId,
+  taskTitle,
+  taskDescription,
+  isGeneratingSteps = false
 }: TaskStepsProps) {
   const [newStepInput, setNewStepInput] = useState('');
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -238,9 +247,20 @@ export default function TaskSteps({
               <PlusIcon className="w-4 h-4 mr-1" />
               Add
             </button>
+            {/* Generate Next Steps button - only show if there are completed steps */}
+            {onGenerateSteps && steps.some(step => step.done) && (
+              <button
+                onClick={onGenerateSteps}
+                disabled={isGeneratingSteps}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+              >
+                <SparklesIcon className="w-4 h-4 mr-1" />
+                {isGeneratingSteps ? 'Generating...' : 'Generate Next Steps'}
+              </button>
+            )}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            💡 Break down your task further as you work
+            💡 Break down your task further as you work or use AI to generate next steps based on completed ones
           </div>
         </div>
       )}

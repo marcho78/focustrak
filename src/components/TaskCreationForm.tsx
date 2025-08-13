@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Task, TaskStep } from '@/types';
+import ValidationModal from '@/components/ValidationModal';
 import { 
   PlayIcon, 
   PlusIcon, 
@@ -37,9 +38,14 @@ export default function TaskCreationForm({
   const [showForm, setShowForm] = useState(!existingTask);
   const [useAiBreakdown, setUseAiBreakdown] = useState(false);
   const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
+  const [validationModal, setValidationModal] = useState({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
 
 
-  const createTask = (): Task => {
+  const createTask = (customSteps?: TaskStep[]): Task => {
     return {
       id: existingTask?.id || `temp-${Date.now()}`,
       userId: 'current-user',
@@ -50,23 +56,39 @@ export default function TaskCreationForm({
       createdAt: existingTask?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       estimatedSessions: 1,
-      steps: steps,
+      totalTimeSpent: existingTask?.totalTimeSpent || 0,
+      steps: customSteps || steps,
     };
   };
 
   const handleStart = async () => {
     if (!taskTitle.trim()) return;
     
+    // Check if we need steps
+    let stepsToUse = steps;
+    
     // If AI breakdown is enabled and we don't have steps yet, generate them first
     if (useAiBreakdown && steps.length === 0) {
-      await handleGenerateAiSteps();
-      // Create task with the newly generated steps
-      const task = createTask();
-      onStart(task);
-    } else {
-      const task = createTask();
-      onStart(task);
+      const generatedSteps = await handleGenerateAiSteps();
+      
+      if (!generatedSteps || generatedSteps.length === 0) {
+        // If AI generation failed, don't start (handleGenerateAiSteps shows its own error)
+        return;
+      }
+      stepsToUse = generatedSteps;
+    } else if (!useAiBreakdown && steps.length === 0) {
+      // If AI is not enabled, require at least one manual step
+      setValidationModal({
+        isOpen: true,
+        title: 'No Steps Added',
+        message: 'Please add at least one step to your task before starting.'
+      });
+      return;
     }
+    
+    // Create and start the task with the appropriate steps
+    const task = createTask(stepsToUse);
+    onStart(task);
   };
 
   const handleAddStep = () => {
@@ -140,8 +162,8 @@ export default function TaskCreationForm({
   };
 
 
-  const handleGenerateAiSteps = async () => {
-    if (!taskTitle.trim()) return;
+  const handleGenerateAiSteps = async (): Promise<TaskStep[] | null> => {
+    if (!taskTitle.trim()) return null;
     
     setIsGeneratingSteps(true);
     try {
@@ -180,10 +202,17 @@ export default function TaskCreationForm({
         const updatedTask = { ...existingTask, steps: updatedSteps };
         onUpdateTask(updatedTask);
       }
+      
+      return generatedSteps;
     } catch (error) {
       console.error('Error generating AI steps:', error);
-      // Show error to user instead of falling back
-      alert('Failed to generate AI steps. Please check your internet connection and try again.');
+      // Show error to user
+      setValidationModal({
+        isOpen: true,
+        title: 'AI Generation Failed',
+        message: 'Unable to generate task breakdown at this time. The AI service may be experiencing high load. Please try again in a moment or add steps manually.'
+      });
+      return null;
     } finally {
       setIsGeneratingSteps(false);
     }
@@ -508,6 +537,14 @@ export default function TaskCreationForm({
         <p>🎯 Start your {Math.floor((25 * 60) / 60)}-minute focus session</p>
         <p className="mt-1">✨ Break tasks into small, actionable steps for better focus</p>
       </div>
+
+      {/* Validation Modal */}
+      <ValidationModal
+        isOpen={validationModal.isOpen}
+        onClose={() => setValidationModal({ ...validationModal, isOpen: false })}
+        title={validationModal.title}
+        message={validationModal.message}
+      />
     </div>
   );
 }

@@ -136,6 +136,22 @@ async function toggleTaskStep(taskId: string, stepId: string): Promise<void> {
   }
 }
 
+// Helper function to format task time in hours and minutes
+function formatTaskTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m`;
+  } else if (seconds > 0) {
+    return 'Less than 1m';
+  } else {
+    return '0m';
+  }
+}
+
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
@@ -189,6 +205,11 @@ export default function Home() {
   const setCurrentSessionRef = useRef(setCurrentSession);
   const setCurrentTaskRef = useRef(setCurrentTask);
   const setStreakRef = useRef(setStreak);
+  
+  // Keep task ref in sync with state
+  useEffect(() => {
+    currentTaskRef.current = currentTask;
+  }, [currentTask]);
 
   // Update refs when state changes
   useEffect(() => {
@@ -210,25 +231,38 @@ export default function Home() {
   const breakTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Handle break timer completion
-  const handleBreakComplete = useCallback(() => {
+  const handleBreakComplete = useCallback((isManualEnd = false) => {
     // Store the current task before any state updates
     const taskForResumption = currentTask;
     
     // Get current break timer state to avoid stale closures
     setBreakTimer(prev => {
-      // Only complete if time actually reached zero and we're active
-      if (prev.timeRemaining === 0 && prev.isActive) {
+      // Complete if break is active AND (timer reached zero OR manually ended)
+      if (prev.isActive && (prev.timeRemaining === 0 || isManualEnd)) {
+        // Calculate actual break duration (how long the break actually lasted)
+        const actualDuration = prev.totalTime - prev.timeRemaining;
+        
         // Store completed break data with the task we captured earlier
         setCompletedBreakData({
           breakType: prev.type,
-          duration: prev.totalTime,
+          duration: actualDuration > 0 ? actualDuration : prev.totalTime,
           taskToResume: taskForResumption // Use the task we captured before state updates
         });
         
         // Show break completion modal
         setIsBreakCompleteModalOpen(true);
         
-        return { ...prev, isActive: false };
+        // Clear the timer interval if it exists
+        if (breakTimerIntervalRef.current) {
+          clearInterval(breakTimerIntervalRef.current);
+          breakTimerIntervalRef.current = null;
+        }
+        
+        return { 
+          ...prev, 
+          isActive: false,
+          timeRemaining: 0 
+        };
       } else {
         return prev;
       }
@@ -392,30 +426,35 @@ export default function Home() {
         
         console.log('Session completed successfully!', session);
         
-        // Check if task should be marked as completed
+        // Update task with time spent and check if it should be marked as completed
         const currentTask = currentTaskRef.current;
-        if (currentTask && currentTask.steps && currentTask.steps.length > 0) {
-          const allStepsComplete = currentTask.steps.every(step => step.done);
+        if (currentTask) {
+          const allStepsComplete = currentTask.steps && currentTask.steps.length > 0 && 
+                                   currentTask.steps.every(step => step.done);
           
-          if (allStepsComplete) {
-            try {
-              // Mark task as completed
-              const response = await fetch(`/api/tasks/${currentTask.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  status: 'completed',
-                  completedAt: new Date().toISOString()
-                })
-              });
-              
-              const result = await response.json();
-              if (!result.success) {
-                console.warn('Failed to mark task as completed:', result.error);
-              }
-            } catch (error) {
-              console.warn('Failed to mark task as completed:', error);
+          try {
+            // Update task with accumulated time (and status if complete)
+            const response = await fetch(`/api/tasks/${currentTask.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                status: allStepsComplete ? 'completed' : currentTask.status,
+                completedAt: allStepsComplete ? new Date().toISOString() : undefined,
+                addTimeSpent: actualDuration // Add the session duration to total time
+              })
+            });
+            
+            const result = await response.json();
+            if (result.success && result.data) {
+              // Update local task with new total time
+              const updatedTask = { ...currentTask, totalTimeSpent: result.data.total_time_spent };
+              setCurrentTask(updatedTask);
+              currentTaskRef.current = updatedTask;
+            } else {
+              console.warn('Failed to update task:', result.error);
             }
+          } catch (error) {
+            console.warn('Failed to update task:', error);
           }
         }
         
@@ -442,18 +481,22 @@ export default function Home() {
           totalSteps,
           streak: currentStreak,
           isTaskComplete: isTaskFullyComplete,
-          task: !isTaskFullyComplete ? task : null // Keep task for resumption if not complete
+          task: task // Always keep task for resumption after break
         });
         
         // Check if we should auto-start a break or show the completion modal
-        if (settings.autoStartBreaks) {
+        if (isTaskFullyComplete) {
+          // Task is complete - ALWAYS show the completion modal for celebration
+          console.log('🎉 Task fully complete - showing completion modal');
+          setIsSessionCompleteModalOpen(true);
+        } else if (settings.autoStartBreaks) {
+          // Task not complete and auto-break is on - start break automatically
           console.log('🔄 Auto-starting break after session completion');
-          // Auto-start a short break
           setTimeout(() => {
             handleTakeBreak('short');
           }, 500); // Small delay to ensure state updates complete
         } else {
-          // Show completion modal for user to choose
+          // Task not complete and auto-break is off - show modal for user to choose
           setIsSessionCompleteModalOpen(true);
         }
         
@@ -476,9 +519,10 @@ export default function Home() {
         setIsSessionCompleteModalOpen(true);
       }
       
-      // Reset for next session regardless of database update success
+      // Reset session but keep task for potential break resumption
       setCurrentSessionRef.current(null);
-      setCurrentTaskRef.current(null);
+      // Don't clear task ref here - we need it for break resumption
+      // setCurrentTaskRef.current(null);  
       setDistractionsRef.current([]);
     } else {
       console.log('⚠️ handleSessionComplete called but no current session');
@@ -728,6 +772,50 @@ export default function Home() {
     }
   }, [currentTask]);
 
+  const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
+  
+  const handleGenerateSteps = useCallback(async () => {
+    if (!currentTask) return;
+    
+    setIsGeneratingSteps(true);
+    
+    try {
+      const completedSteps = currentTask.steps
+        .filter(step => step.done)
+        .map(step => step.content);
+      
+      const remainingSteps = currentTask.steps
+        .filter(step => !step.done)
+        .map(step => step.content);
+      
+      const response = await fetch('/api/tasks/generate-next-steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskTitle: currentTask.title,
+          taskDescription: currentTask.description || '',
+          completedSteps,
+          remainingSteps
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        // Add the generated steps to the task
+        for (const stepContent of result.data) {
+          await handleAddStep(stepContent);
+        }
+      } else {
+        console.error('Failed to generate steps:', result.error);
+      }
+    } catch (error) {
+      console.error('Error generating steps:', error);
+    } finally {
+      setIsGeneratingSteps(false);
+    }
+  }, [currentTask, handleAddStep]);
+
   const handleDistractionCapture = async (distraction: string) => {
     if (!currentSession) return;
     
@@ -772,15 +860,11 @@ export default function Home() {
   }, [breakTimerHook]);
   
   const handleBreakStop = useCallback(() => {
-    console.log('🛑 Stopping break timer');
-    breakTimerHook.reset();
-    setBreakTimer({
-      isActive: false,
-      timeRemaining: 0,
-      totalTime: 0,
-      type: 'short'
-    });
-  }, [breakTimerHook]);
+    console.log('🛑 Ending break timer early');
+    
+    // Trigger the break complete flow with manual end flag
+    handleBreakComplete(true);
+  }, [handleBreakComplete]);
   
   const handleStartNewSession = useCallback(() => {
     console.log('🚀 Starting new session after break');
@@ -807,17 +891,12 @@ export default function Home() {
     // If we have a task to resume, start a new focus session with it
     if (taskToResume) {
       console.log('🔄 Resuming task after break:', taskToResume.title);
-      // Reset task steps to allow working on them again
-      const resetTask = {
-        ...taskToResume,
-        steps: taskToResume.steps.map(step => ({ ...step, done: false }))
-      };
-      
-      setCurrentTask(resetTask);
+      // Keep the task with its current progress (don't reset completed steps)
+      setCurrentTask(taskToResume);
       
       // Start new focus session with the task
       setTimeout(() => {
-        handleStart(resetTask);
+        handleStart(taskToResume);
       }, 100);
     } else {
       console.log('⚠️ No task to resume after break');
@@ -956,6 +1035,15 @@ export default function Home() {
                 isPaused={timer.isPaused}
               />
               
+              {/* Total time on task */}
+              {currentTask && currentTask.totalTimeSpent !== undefined && (
+                <div className="text-center mb-4">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Total time on task: {formatTaskTime(currentTask.totalTimeSpent)}
+                  </div>
+                </div>
+              )}
+              
               {/* Current task info */}
               {currentTask && (
                 <div className="mb-8">
@@ -970,7 +1058,11 @@ export default function Home() {
                         onAddStep={handleAddStep}
                         onEditStep={handleEditStep}
                         onDeleteStep={handleDeleteStep}
+                        onGenerateSteps={handleGenerateSteps}
                         taskId={currentTask.id}
+                        taskTitle={currentTask.title}
+                        taskDescription={currentTask.description}
+                        isGeneratingSteps={isGeneratingSteps}
                       />
                     </div>
                   )}

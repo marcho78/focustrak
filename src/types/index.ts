@@ -30,6 +30,7 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   estimatedSessions: number;
+  totalTimeSpent?: number; // in seconds, cumulative across all sessions
   steps: TaskStep[];
 }
 

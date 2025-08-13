@@ -74,11 +74,6 @@ export default function TimerDisplay({
       {/* Session info */}
       <div className="text-center text-sm text-gray-600 dark:text-gray-300 mb-4">
         <div>Session length: {formatTime(totalTime)}</div>
-        {progress > 0 && (
-          <div className="mt-1">
-            Progress: {Math.round(progress)}% complete
-          </div>
-        )}
       </div>
     </div>
   );

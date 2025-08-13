@@ -56,15 +56,51 @@ Please break this down into manageable steps.`;
       max_completion_tokens: parseInt(process.env.OPENAI_MAX_COMPLETION_TOKENS || '2000'),
     });
 
-    const response = completion.choices[0]?.message?.content;
-    console.log('OpenAI raw response:', response);
+    let response = completion.choices[0]?.message?.content;
+    const finishReason = completion.choices[0]?.finish_reason;
     
-    if (!response) {
-      console.log('Error: No response from OpenAI');
-      return NextResponse.json(
-        { success: false, error: 'No response from OpenAI' },
-        { status: 500 }
-      );
+    console.log('OpenAI response details:', {
+      content: response,
+      finishReason,
+      usage: completion.usage,
+      model: completion.model
+    });
+    
+    if (!response || response.trim() === '') {
+      console.log('Error: Empty response from OpenAI - model may be overloaded');
+      
+      // Try with a fallback model if gpt-5-nano fails
+      console.log('Attempting with fallback model: gpt-4o-mini');
+      
+      try {
+        const fallbackCompletion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPrompt }
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+        });
+        
+        const fallbackResponse = fallbackCompletion.choices[0]?.message?.content;
+        console.log('Fallback model response:', fallbackResponse);
+        
+        if (fallbackResponse) {
+          response = fallbackResponse;
+        } else {
+          return NextResponse.json(
+            { success: false, error: 'AI service is currently unavailable. Please try again later or add steps manually.' },
+            { status: 503 }
+          );
+        }
+      } catch (fallbackError) {
+        console.error('Fallback model also failed:', fallbackError);
+        return NextResponse.json(
+          { success: false, error: 'AI service is currently unavailable. Please try again later or add steps manually.' },
+          { status: 503 }
+        );
+      }
     }
 
     try {
