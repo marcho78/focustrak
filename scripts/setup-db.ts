@@ -159,7 +159,7 @@ async function createTriggers() {
 async function populateSampleData() {
   console.log('🌱 Populating sample data...');
 
-  await transaction(async (client) => {
+  await transaction(async (client: any) => {
     // Create sample user
     const userResult = await client.query(`
       INSERT INTO users (email, settings, timezone)

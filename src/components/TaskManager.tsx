@@ -151,10 +151,17 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
   const [editingSteps, setEditingSteps] = useState<Set<string>>(new Set());
   const [editStepValues, setEditStepValues] = useState<{[stepId: string]: string}>({});
   const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
+  
+  // Pagination state
+  const [incompleteTasksLimit, setIncompleteTasksLimit] = useState(10);
+  const [completedTasksLimit, setCompletedTasksLimit] = useState(5);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      // Always fetch tasks when opening
+      // Always fetch tasks when opening, reset pagination
+      setIncompleteTasksLimit(10);
+      setCompletedTasksLimit(5);
       fetchTasks();
       
       // Check if refresh value has changed since we last saw it
@@ -164,15 +171,41 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
     }
   }, [isOpen, refresh]);
 
-  const fetchTasks = async () => {
-    setIsLoading(true);
-    setError(null);
+  // Update tasks when limits change (for Show More functionality)
+  useEffect(() => {
+    if (isOpen && (incompleteTasksLimit > 10 || completedTasksLimit > 5)) {
+      fetchTasks(false); // Don't reset, append new tasks
+    }
+  }, [incompleteTasksLimit, completedTasksLimit]);
+
+  const fetchTasks = async (reset = true) => {
+    if (reset) {
+      setIsLoading(true);
+      setError(null);
+    } else {
+      setIsLoadingMore(true);
+    }
+    
     try {
-      const response = await fetch('/api/tasks/all');
+      const params = new URLSearchParams({
+        incompleteLimit: incompleteTasksLimit.toString(),
+        completedLimit: completedTasksLimit.toString()
+      });
+      
+      const response = await fetch(`/api/tasks/all?${params}`);
       const result = await response.json();
       
       if (result.success) {
-        setTasks(result.data);
+        if (reset) {
+          setTasks(result.data);
+        } else {
+          // Append new tasks to existing ones
+          setTasks(prev => {
+            const existingIds = new Set(prev.map(t => t.id));
+            const newTasks = result.data.filter((t: TaskItem) => !existingIds.has(t.id));
+            return [...prev, ...newTasks];
+          });
+        }
       } else {
         setError(result.error || 'Failed to fetch tasks');
       }
@@ -180,7 +213,11 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
       setError('Failed to fetch tasks');
       console.error('Error fetching tasks:', err);
     } finally {
-      setIsLoading(false);
+      if (reset) {
+        setIsLoading(false);
+      } else {
+        setIsLoadingMore(false);
+      }
     }
   };
 
@@ -412,6 +449,46 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
   const incompleteTasks = tasks.filter(task => task.status !== 'completed');
   const completedTasks = tasks.filter(task => task.status === 'completed');
   const displayTasks = activeTab === 'incomplete' ? incompleteTasks : completedTasks;
+  
+  // Function to load more tasks
+  const loadMoreTasks = () => {
+    if (activeTab === 'incomplete') {
+      setIncompleteTasksLimit(prev => prev + 10);
+    } else {
+      setCompletedTasksLimit(prev => prev + 5);
+    }
+    // The useEffect will trigger fetchTasks(false) when limits change
+  };
+  
+  // Determine if we should show "Show More" button
+  // We'll show it if we have exactly the limit number of tasks (suggesting there might be more)
+  const shouldShowLoadMore = activeTab === 'incomplete' 
+    ? incompleteTasks.length >= incompleteTasksLimit
+    : completedTasks.length >= completedTasksLimit;
+
+  // Select All functionality
+  const toggleSelectAll = () => {
+    const currentTaskIds = displayTasks.map(task => task.id);
+    const allCurrentSelected = currentTaskIds.every(id => selectedTasks.has(id));
+    
+    if (allCurrentSelected) {
+      // Deselect all current tasks
+      setSelectedTasks(prev => {
+        const newSet = new Set(prev);
+        currentTaskIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+    } else {
+      // Select all current tasks
+      setSelectedTasks(prev => new Set([...prev, ...currentTaskIds]));
+    }
+  };
+  
+  // Check if all current tasks are selected
+  const currentTaskIds = displayTasks.map(task => task.id);
+  const allCurrentSelected = currentTaskIds.length > 0 && currentTaskIds.every(id => selectedTasks.has(id));
+  const someCurrentSelected = currentTaskIds.some(id => selectedTasks.has(id));
+  const selectedCurrentCount = currentTaskIds.filter(id => selectedTasks.has(id)).length;
 
   if (!isOpen) return null;
 
@@ -490,30 +567,71 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 </div>
               ) : error ? (
-                <div className="p-4 text-center">
-                  <p className="text-red-600 dark:text-red-400">{error}</p>
+                <div className="p-6 text-center">
+                  <ExclamationTriangleIcon className="w-12 h-12 mx-auto mb-4 text-red-400 opacity-50" />
+                  <p className="text-red-600 dark:text-red-400 font-medium mb-2">Unable to Load Tasks</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{error}</p>
                   <button 
                     onClick={fetchTasks}
-                    className="mt-2 text-blue-600 dark:text-blue-400 hover:underline"
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                   >
-                    Try again
+                    <ArrowPathIcon className="w-4 h-4 mr-2" />
+                    Try Again
                   </button>
                 </div>
               ) : displayTasks.length === 0 ? (
                 <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                  <TrophyIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg mb-2">
-                    {activeTab === 'incomplete' ? 'No incomplete tasks' : 'No completed tasks yet'}
+                  <TrophyIcon className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                  <p className="text-xl font-medium mb-2 text-gray-700 dark:text-gray-300">
+                    {activeTab === 'incomplete' ? 'No tasks yet!' : 'No completed tasks yet'}
                   </p>
-                  <p className="text-sm">
+                  <p className="text-sm mb-4">
                     {activeTab === 'incomplete' 
-                      ? 'All your tasks are completed!'
-                      : 'Complete your first focus session to see your history here!'
+                      ? 'Start building your focus habit by creating your first task. Close this panel and use the form on the main page to get started.'
+                      : 'Complete your first focus session to see your achievements here!'
                     }
                   </p>
+                  {activeTab === 'incomplete' && (
+                    <div className="text-xs text-gray-400">
+                      <p>💡 Tip: Tasks with steps help you stay focused and make progress visible</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-4 space-y-3">
+                  {/* Select All Header */}
+                  {displayTasks.length > 0 && (
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={allCurrentSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someCurrentSelected && !allCurrentSelected;
+                          }}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {allCurrentSelected 
+                            ? `All ${displayTasks.length} selected`
+                            : someCurrentSelected 
+                            ? `${selectedCurrentCount} of ${displayTasks.length} selected`
+                            : `Select all ${displayTasks.length} tasks`
+                          }
+                        </span>
+                      </div>
+                      {someCurrentSelected && (
+                        <button
+                          onClick={() => setSelectedTasks(new Set())}
+                          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                        >
+                          Clear selection
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  
                   {displayTasks.map((task) => {
                     const statusInfo = getTaskStatusInfo(task);
                     const StatusIcon = statusInfo.icon;
@@ -830,6 +948,29 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
                       </div>
                     );
                   })}
+                  
+                  {/* Show More Button */}
+                  {shouldShowLoadMore && (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={loadMoreTasks}
+                        disabled={isLoadingMore}
+                        className="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center mx-auto disabled:opacity-50"
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500 mr-2"></div>
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            Show More
+                            <ChevronDownIcon className="w-4 h-4 ml-2" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

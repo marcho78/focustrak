@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useUser } from '@/hooks/useAuth';
+import Link from 'next/link';
 import { Task, Session, Distraction, TaskStep, BreakTimerState } from '@/types';
 import TaskCreationForm from '@/components/TaskCreationForm';
 import TimerDisplay from '@/components/TimerDisplay';
@@ -12,6 +14,7 @@ import TaskManager from '@/components/TaskManager';
 import SettingsModal from '@/components/SettingsModal';
 import BreakTimer from '@/components/BreakTimer';
 import BreakCompleteModal from '@/components/BreakCompleteModal';
+import Header from '@/components/Header';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
 import { 
@@ -153,8 +156,10 @@ function formatTaskTime(seconds: number): string {
 }
 
 export default function Home() {
+  const { user, error, isLoading } = useUser();
   const [isClient, setIsClient] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
+  const [userSynced, setUserSynced] = useState(false);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [isDistractionCaptureOpen, setIsDistractionCaptureOpen] = useState(false);
   const [distractions, setDistractions] = useState<Distraction[]>([]);
@@ -194,6 +199,23 @@ export default function Home() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Sync user with database when they log in
+  useEffect(() => {
+    if (user && !userSynced) {
+      fetch('/api/auth/sync-user')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setUserSynced(true);
+            console.log('User synced successfully:', data.data);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to sync user:', err);
+        });
+    }
+  }, [user, userSynced]);
   
   // Load settings
   const { settings, saveSettings, isLoaded } = useSettings();
@@ -480,7 +502,7 @@ export default function Home() {
           completedSteps,
           totalSteps,
           streak: currentStreak,
-          isTaskComplete: isTaskFullyComplete,
+          isTaskComplete: isTaskFullyComplete || undefined,
           task: task // Always keep task for resumption after break
         });
         
@@ -957,7 +979,7 @@ export default function Home() {
     } else {
       console.log('❌ Auto-completion disabled:', {
         hasTask: !!currentTask,
-        hasSteps: currentTask?.steps?.length > 0,
+        hasSteps: (currentTask?.steps?.length ?? 0) > 0,
         isSessionActive,
         reason: !currentTask ? 'No current task' : 
                 !currentTask.steps || currentTask.steps.length === 0 ? 'No steps' : 
@@ -975,28 +997,60 @@ export default function Home() {
     );
   }
 
+  // Show loading state while Auth0 is loading
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login prompt if user is not authenticated
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 text-center">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+            Focus
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-8">
+            Start sooner, stay focused, finish on time
+          </p>
+          <p className="text-gray-700 dark:text-gray-300 mb-6">
+            Please sign in to start your focus session
+          </p>
+          <Link
+            href="/api/auth/login"
+            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            Sign In to Get Started
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`min-h-screen p-4 ${
+    <div className={`min-h-screen ${
       isBreakActive 
         ? 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900 dark:to-emerald-800'
         : 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800'
     }`}>
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <header className="text-center mb-8 pt-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Focus
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Start sooner, stay focused, finish on time
-          </p>
-          
-          {/* Streak display */}
-          <div className="flex items-center justify-center mt-4 text-orange-600 dark:text-orange-400">
+      {/* Add Header */}
+      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+      
+      <div className="max-w-2xl mx-auto pt-20 px-4">
+        {/* Streak display */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center text-orange-600 dark:text-orange-400">
             <FireIcon className="w-5 h-5 mr-2" />
             <span className="font-semibold">{streak} day streak</span>
           </div>
-        </header>
+        </div>
 
         {/* Main content area */}
         <div className={`rounded-3xl shadow-xl p-8 mb-6 ${
@@ -1186,7 +1240,11 @@ export default function Home() {
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
             estimatedSessions: 1,
-            steps: task.steps
+            totalTimeSpent: 0,
+            steps: task.steps.map((step: any) => ({
+              ...step,
+              taskId: task.id // Ensure taskId is set
+            }))
           };
           
           // Reset timer and start new session
@@ -1201,15 +1259,6 @@ export default function Home() {
       
       {/* Floating action buttons */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-40">
-        {/* Settings button */}
-        <button
-          onClick={() => setIsSettingsOpen(true)}
-          className="w-14 h-14 bg-gradient-to-r from-gray-600 to-gray-700 dark:from-gray-700 dark:to-gray-800 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-300 dark:focus:ring-gray-600"
-          aria-label="Open settings"
-        >
-          <Cog6ToothIcon className="w-6 h-6 mx-auto" />
-        </button>
-        
         {/* Task history button */}
         <button
           onClick={() => setIsTaskHistoryOpen(true)}

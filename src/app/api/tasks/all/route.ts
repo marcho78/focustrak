@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService, SessionService } from '@/lib/services';
+import { getAuthenticatedUser } from '@/lib/auth-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    // For now, using a mock user ID - in a real app, this would come from authentication
-    const userId = '204e127b-6daa-4eab-b51c-dae358e081e5';
+    // Get authenticated user
+    const user = await getAuthenticatedUser();
+    const userId = user.id;
+    
+    // Parse pagination parameters from URL
+    const { searchParams } = new URL(request.url);
+    const incompleteLimit = parseInt(searchParams.get('incompleteLimit') || '10');
+    const completedLimit = parseInt(searchParams.get('completedLimit') || '5');
     
     // Fetch all tasks for the user
     const tasks = await TaskService.getUserTasks(userId);
@@ -92,16 +99,49 @@ export async function GET(request: NextRequest) {
       return bDate - aDate;
     });
     
+    // Apply pagination limits
+    const incompleteTasks = sortedTasks.filter(task => task.status !== 'completed');
+    const completedTasks = sortedTasks.filter(task => task.status === 'completed');
+    
+    const paginatedIncompleteTasks = incompleteTasks.slice(0, incompleteLimit);
+    const paginatedCompletedTasks = completedTasks.slice(0, completedLimit);
+    
+    const paginatedTasks = [...paginatedIncompleteTasks, ...paginatedCompletedTasks];
+    
     return NextResponse.json({
       success: true,
-      data: sortedTasks
+      data: paginatedTasks
     });
   } catch (error) {
     console.error('Error fetching all tasks:', error);
+    
+    // Handle authentication errors specifically
+    if (error instanceof Error) {
+      if (error.message === 'Not authenticated' || error.message === 'Session expired') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Please log in to view your tasks'
+          },
+          { status: 401 }
+        );
+      }
+      
+      if (error.message.includes('User not found')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Account not found. Please try logging out and back in.'
+          },
+          { status: 401 }
+        );
+      }
+    }
+    
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to fetch tasks'
+        error: 'Unable to load your tasks. Please try again.'
       },
       { status: 500 }
     );

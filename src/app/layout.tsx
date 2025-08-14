@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import AuthProvider from "@/components/auth/AuthProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,8 +18,6 @@ export const metadata: Metadata = {
   description: "Start sooner, stay focused, finish on time. A simple app to help you overcome procrastination with 25-minute focus sessions.",
   keywords: ["focus", "productivity", "pomodoro", "procrastination", "time management"],
   authors: [{ name: "Focus App" }],
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
-  themeColor: "#3b82f6",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -37,11 +36,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning={true}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning={true}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

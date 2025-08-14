@@ -390,10 +390,18 @@ export class StreakService {
   }
 }
 
-// Demo user helper
+// Demo user helper - DEPRECATED
+// ⚠️ WARNING: This function is deprecated and should not be used in production API routes.
+// All API routes should use getAuthenticatedUser() from @/lib/auth-helpers instead.
 export const DEMO_USER_EMAIL = 'demo@focusapp.com';
 
+/**
+ * @deprecated Use getAuthenticatedUser() from @/lib/auth-helpers instead
+ * This function should only be used for development/testing purposes
+ */
 export async function getDemoUser(): Promise<User> {
+  console.warn('⚠️ getDemoUser() is deprecated. Use getAuthenticatedUser() instead for production API routes.');
+  
   let user = await UserService.getUserByEmail(DEMO_USER_EMAIL);
   
   if (!user) {

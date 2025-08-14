@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TaskService, getDemoUser } from '@/lib/services';
+import { TaskService } from '@/lib/services';
+import { getAuthenticatedUser } from '@/lib/auth-helpers';
 import { TaskStatus } from '@/types';
 
 // GET /api/tasks - Get user's tasks
 export async function GET(request: NextRequest) {
   try {
-    // For now, use demo user
-    const user = await getDemoUser();
+    // Get authenticated user
+    const user = await getAuthenticatedUser();
     
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') as TaskStatus | null;
     
-    const tasks = await TaskService.getUserTasks(user.id, status);
+    const tasks = await TaskService.getUserTasks(user.id, status || undefined);
     
     return NextResponse.json({
       success: true,
@@ -38,8 +39,8 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // For now, use demo user
-    const user = await getDemoUser();
+    // Get authenticated user
+    const user = await getAuthenticatedUser();
     
     // Create the task
     const task = await TaskService.createTask(user.id, title, description);

@@ -11,6 +11,7 @@
     "test-db": "ts-node --project tsconfig.json -e \"import { testConnection } from './src/lib/db'; testConnection().then(() => process.exit(0))\""
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.9.0",
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
     "@types/pg": "^8.15.5",
