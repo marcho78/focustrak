@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SessionService } from '@/lib/services';
+import { getAuthenticatedUser } from '@/lib/auth-helpers';
 
 // PUT /api/sessions/[id] - Update a session
 export async function PUT(
@@ -12,17 +13,37 @@ export async function PUT(
     
     console.log('Updating session:', id, 'with updates:', updates);
     
-    await SessionService.updateSession(id, updates);
+    // Check if this is a browser close cleanup (sendBeacon)
+    const isCleanupRequest = updates.notes && 
+      updates.notes.includes('Session interrupted by browser close/refresh');
     
-    // Get updated session to return
-    const session = await SessionService.getSessionById(id);
-    
-    console.log('Session updated successfully:', session);
-    
-    return NextResponse.json({
-      success: true,
-      data: session
-    });
+    if (isCleanupRequest) {
+      // For browser close cleanup, skip authentication to allow sendBeacon to work
+      console.log('Processing browser close cleanup for session:', id);
+      
+      // Just update the session without authentication checks
+      await SessionService.updateSession(id, updates);
+      
+      return NextResponse.json({
+        success: true,
+        message: 'Session cleanup completed'
+      });
+    } else {
+      // For regular updates, require authentication
+      const user = await getAuthenticatedUser();
+      
+      await SessionService.updateSession(id, updates);
+      
+      // Get updated session to return
+      const session = await SessionService.getSessionById(id);
+      
+      console.log('Session updated successfully:', session);
+      
+      return NextResponse.json({
+        success: true,
+        data: session
+      });
+    }
   } catch (error) {
     console.error('Error updating session - Full error:', error);
     console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');

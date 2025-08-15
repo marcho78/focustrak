@@ -57,10 +57,10 @@ export default function DistractionCapture({
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div>
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                Not Now...
+                Capture Distraction
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Capture the distraction and get back to focus
+                Capture the thought and continue focusing
               </p>
             </div>
             <button

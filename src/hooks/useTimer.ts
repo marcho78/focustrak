@@ -15,6 +15,7 @@ export function useTimer({
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const pausedTimeRef = useRef<number>(0);
+  const pauseStartTimeRef = useRef<number | null>(null);
   
   // Update duration when it changes (but only if timer is not running)
   useEffect(() => {
@@ -80,13 +81,16 @@ export function useTimer({
         startTimeRef.current = Date.now();
         pausedTimeRef.current = 0;
       } else {
-        // Resume from pause
+        // Resume from previous session (not from pause)
         startTimeRef.current = Date.now() - (initialDuration - timeRemaining) * 1000;
       }
     } else if (isPaused) {
-      // Resume from pause
-      const pauseDuration = Math.floor((Date.now() - (startTimeRef.current || 0)) / 1000) - (initialDuration - timeRemaining);
-      pausedTimeRef.current += pauseDuration;
+      // Resume from pause - add the exact pause duration to our paused time tracker
+      if (pauseStartTimeRef.current) {
+        const pauseDuration = Math.floor((Date.now() - pauseStartTimeRef.current) / 1000);
+        pausedTimeRef.current += pauseDuration;
+        pauseStartTimeRef.current = null;
+      }
       setIsPaused(false);
     }
   }, [isRunning, isPaused, timeRemaining, initialDuration, duration]);
@@ -94,6 +98,8 @@ export function useTimer({
   const pause = useCallback(() => {
     if (isRunning && !isPaused) {
       setIsPaused(true);
+      // Record when the pause started
+      pauseStartTimeRef.current = Date.now();
     }
   }, [isRunning, isPaused]);
 
@@ -104,6 +110,7 @@ export function useTimer({
     setInitialDuration(duration);
     startTimeRef.current = null;
     pausedTimeRef.current = 0;
+    pauseStartTimeRef.current = null;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -116,6 +123,7 @@ export function useTimer({
     setTimeRemaining(0);
     startTimeRef.current = null;
     pausedTimeRef.current = 0;
+    pauseStartTimeRef.current = null;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;

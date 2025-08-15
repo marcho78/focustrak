@@ -199,6 +199,7 @@ export default function Home() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+  
 
   // Sync user with database when they log in
   useEffect(() => {
@@ -219,6 +220,29 @@ export default function Home() {
   
   // Load settings
   const { settings, saveSettings, isLoaded } = useSettings();
+  
+  // Check for orphaned active sessions on app startup and clean them up
+  useEffect(() => {
+    if (user && userSynced && settings && settings.defaultSessionDuration) {
+      const cleanupOrphanedSessions = async () => {
+        try {
+          const response = await fetch('/api/sessions/cleanup-orphaned', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          const result = await response.json();
+          if (result.success && result.data.cleanedUp > 0) {
+            console.log(`🧹 Cleaned up ${result.data.cleanedUp} orphaned sessions`);
+          }
+        } catch (error) {
+          console.warn('Failed to cleanup orphaned sessions:', error);
+        }
+      };
+      
+      cleanupOrphanedSessions();
+    }
+  }, [user, userSynced, settings]);
 
   // Use refs to store current values for stable callback
   const currentSessionRef = useRef<Session | null>(null);
@@ -557,6 +581,66 @@ export default function Home() {
     onComplete: handleSessionComplete,
   });
 
+  // Browser close/refresh detection and cleanup (after timer initialization)
+  useEffect(() => {
+    const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+      // Only show warning and do cleanup if there's an active session that's actually running
+      if (currentSession && timer.isRunning && !timer.isPaused) {
+        try {
+          // Calculate how much time was actually spent
+          const timeSpent = (settings.defaultSessionDuration || 1500) - timer.timeRemaining;
+          
+          // Use navigator.sendBeacon for reliable cleanup during page unload
+          const sessionData = {
+            status: 'skipped',
+            endedAt: new Date().toISOString(),
+            actualDuration: timeSpent,
+            notes: 'Session interrupted by browser close/refresh'
+          };
+          
+          const blob = new Blob([JSON.stringify(sessionData)], { type: 'application/json' });
+          navigator.sendBeacon(`/api/sessions/${currentSession.id}`, blob);
+          
+        } catch (error) {
+          console.error('Failed to cleanup session on browser close:', error);
+        }
+        
+        // Show warning message to user only when timer is actually running
+        event.preventDefault();
+        const message = 'Your focus session is still running. Closing will end the session.';
+        event.returnValue = message;
+        return message;
+      }
+      
+      // If there's a paused session, do cleanup but don't show warning
+      if (currentSession && timer.isPaused) {
+        try {
+          const timeSpent = (settings.defaultSessionDuration || 1500) - timer.timeRemaining;
+          const sessionData = {
+            status: 'skipped',
+            endedAt: new Date().toISOString(),
+            actualDuration: timeSpent,
+            notes: 'Session interrupted by browser close/refresh'
+          };
+          
+          const blob = new Blob([JSON.stringify(sessionData)], { type: 'application/json' });
+          navigator.sendBeacon(`/api/sessions/${currentSession.id}`, blob);
+        } catch (error) {
+          console.error('Failed to cleanup session on browser close:', error);
+        }
+        // Don't prevent close for paused sessions
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentSession, timer.isRunning, timer.isPaused, timer.timeRemaining, settings.defaultSessionDuration]);
+
   const handleStart = useCallback(async (task?: Task) => {
     console.log('🚀 Starting session with task:', task);
     setIsStarting(true);
@@ -837,6 +921,33 @@ export default function Home() {
       setIsGeneratingSteps(false);
     }
   }, [currentTask, handleAddStep]);
+
+  // Track if timer was running before opening distraction modal
+  const [wasTimerRunningBeforeDistraction, setWasTimerRunningBeforeDistraction] = useState(false);
+  
+  const handleOpenDistractionModal = useCallback(() => {
+    // Store whether timer was running before we pause it
+    setWasTimerRunningBeforeDistraction(timer.isRunning && !timer.isPaused);
+    
+    // Pause the timer if it's running
+    if (timer.isRunning && !timer.isPaused) {
+      timer.pause();
+    }
+    
+    setIsDistractionCaptureOpen(true);
+  }, [timer]);
+  
+  const handleCloseDistractionModal = useCallback(() => {
+    setIsDistractionCaptureOpen(false);
+    
+    // Resume timer if it was running before we opened the modal
+    if (wasTimerRunningBeforeDistraction) {
+      timer.start();
+    }
+    
+    // Reset the flag
+    setWasTimerRunningBeforeDistraction(false);
+  }, [timer, wasTimerRunningBeforeDistraction]);
 
   const handleDistractionCapture = async (distraction: string) => {
     if (!currentSession) return;
@@ -1137,7 +1248,7 @@ export default function Home() {
                 </button>
                 
                 <button
-                  onClick={() => setIsDistractionCaptureOpen(true)}
+                  onClick={handleOpenDistractionModal}
                   className="flex items-center px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                 >
                   <ExclamationTriangleIcon className="w-5 h-5 mr-2" />
@@ -1175,7 +1286,7 @@ export default function Home() {
       {/* Distraction capture modal */}
       <DistractionCapture
         isOpen={isDistractionCaptureOpen}
-        onClose={() => setIsDistractionCaptureOpen(false)}
+        onClose={handleCloseDistractionModal}
         onCapture={handleDistractionCapture}
         sessionId={currentSession?.id || ''}
       />

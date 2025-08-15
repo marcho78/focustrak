@@ -29,6 +29,12 @@ interface HistorySession {
   notes?: string;
   completedSteps: number;
   totalSteps: number;
+  distractions?: Array<{
+    id: string;
+    content: string;
+    createdAt: string;
+    handled: boolean;
+  }>;
 }
 
 interface TaskStep {
@@ -935,6 +941,20 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
                                             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate">
                                               {session.notes}
                                             </p>
+                                          )}
+                                          {session.distractions && session.distractions.length > 0 && (
+                                            <div className="mt-2">
+                                              <p className="text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
+                                                "Not Now" comments ({session.distractions.length}):
+                                              </p>
+                                              <div className="space-y-1">
+                                                {session.distractions.map((distraction) => (
+                                                  <p key={distraction.id} className="text-xs text-gray-600 dark:text-gray-400 italic pl-2 border-l-2 border-orange-200 dark:border-orange-700">
+                                                    "{distraction.content}"
+                                                  </p>
+                                                ))}
+                                              </div>
+                                            </div>
                                           )}
                                         </div>
                                       </div>

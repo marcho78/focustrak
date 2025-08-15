@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
         status: session.status as 'completed' | 'skipped',
         notes: session.notes || undefined,
         completedSteps: session.completedSteps || 0,
-        totalSteps: totalSteps
+        totalSteps: totalSteps,
+        distractions: session.distractions || [] // Include distraction data
       }));
       
       return {

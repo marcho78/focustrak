@@ -253,7 +253,14 @@ export class SessionService {
       [userId, limit]
     );
     
-    return result.rows.map(row => this.mapSessionFromDb(row));
+    const sessions = result.rows.map(row => this.mapSessionFromDb(row));
+    
+    // Get distractions for each session
+    for (const session of sessions) {
+      session.distractions = await this.getSessionDistractions(session.id);
+    }
+    
+    return sessions;
   }
 
   static async getTodaysSessions(userId: string): Promise<Session[]> {
