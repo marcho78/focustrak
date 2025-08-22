@@ -15,14 +15,18 @@ interface HeaderProps {
 
 export default function Header({ onOpenSettings }: HeaderProps) {
   const { user } = useUser();
-  const { settings } = useSettings();
+  const { settings, isLoaded } = useSettings();
   const [notificationStatus, setNotificationStatus] = useState<'enabled' | 'disabled' | 'blocked'>('disabled');
+  const [localSettings, setLocalSettings] = useState(settings);
 
-  useEffect(() => {
-    // Check notification status
+  // Function to check and update notification status
+  const checkNotificationStatus = (overrideSettings?: any) => {
+    // Use provided settings or fall back to current settings
+    const currentSettings = overrideSettings || localSettings || settings;
+    
     if (!notificationService.isBasicSupported()) {
       setNotificationStatus('disabled');
-    } else if (settings.notificationsEnabled) {
+    } else if (currentSettings.notificationsEnabled) {
       const permission = notificationService.getPermission();
       if (permission === 'granted') {
         setNotificationStatus('enabled');
@@ -34,6 +38,58 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     } else {
       setNotificationStatus('disabled');
     }
+  };
+
+  useEffect(() => {
+    setLocalSettings(settings);
+    checkNotificationStatus();
+  }, [settings.notificationsEnabled]);
+  
+  // Also check permission status when window regains focus
+  // This helps catch permission changes made in browser settings
+  useEffect(() => {
+    const handleFocus = () => {
+      checkNotificationStatus();
+    };
+    
+    // Listen for custom notification status changes
+    const handleNotificationStatusChange = () => {
+      checkNotificationStatus();
+    };
+    
+    // Listen for settings saved events
+    const handleSettingsSaved = (event: any) => {
+      // Use the new settings from the event if available
+      if (event.detail && event.detail.settings) {
+        setLocalSettings(event.detail.settings);
+        checkNotificationStatus(event.detail.settings);
+      } else {
+        // Fallback: read from localStorage
+        try {
+          const stored = localStorage.getItem('focus-app-settings');
+          if (stored) {
+            const parsedData = JSON.parse(stored);
+            if (parsedData && parsedData.data) {
+              setLocalSettings(parsedData.data);
+              checkNotificationStatus(parsedData.data);
+            }
+          }
+        } catch (error) {
+          console.error('Error reading settings from localStorage:', error);
+          checkNotificationStatus();
+        }
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('notificationStatusChanged', handleNotificationStatusChange);
+    window.addEventListener('settingsSaved', handleSettingsSaved);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('notificationStatusChanged', handleNotificationStatusChange);
+      window.removeEventListener('settingsSaved', handleSettingsSaved);
+    };
   }, [settings.notificationsEnabled]);
 
   return (

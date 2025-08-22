@@ -70,6 +70,13 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
 
   const handleSave = () => {
     onSave(settings);
+    
+    // Trigger a custom event to notify the header to refresh
+    // This ensures immediate UI update
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('notificationStatusChanged'));
+    }, 50);
+    
     onClose();
   };
 
@@ -142,6 +149,9 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
               '2. Find "Notifications" and set to "Allow"\n' +
               '3. Refresh the page and try again');
         setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+        
+        // Immediately notify header of the change
+        window.dispatchEvent(new CustomEvent('notificationStatusChanged'));
         return;
       }
       
@@ -157,6 +167,10 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
             title: '✅ Notifications Enabled!',
             body: 'You\'ll receive alerts for focus sessions and breaks.'
           });
+          // Trigger a custom event to notify other components
+          window.dispatchEvent(new CustomEvent('notificationStatusChanged', {
+            detail: { enabled: true, permission: 'granted' }
+          }));
         } else {
           setSettings(prev => ({ ...prev, notificationsEnabled: false }));
           if (permission === 'denied') {
@@ -166,10 +180,16 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
       } else {
         // Permission already granted
         setSettings(prev => ({ ...prev, notificationsEnabled: true }));
+        
+        // Immediately notify header of the change
+        window.dispatchEvent(new CustomEvent('notificationStatusChanged'));
       }
     } else {
       // Disabling notifications
       setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+      
+      // Immediately notify header of the change
+      window.dispatchEvent(new CustomEvent('notificationStatusChanged'));
     }
   };
 

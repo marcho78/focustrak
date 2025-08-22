@@ -26,13 +26,29 @@ export function useSettings() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Check if we're on the client side
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Load settings from localStorage on mount (only on client)
+  // Listen for settings saved events to refresh
+  useEffect(() => {
+    const handleSettingsSaved = () => {
+      // Force a refresh by updating the key
+      setRefreshKey(prev => prev + 1);
+    };
+
+    if (isClient) {
+      window.addEventListener('settingsSaved', handleSettingsSaved);
+      return () => {
+        window.removeEventListener('settingsSaved', handleSettingsSaved);
+      };
+    }
+  }, [isClient]);
+
+  // Load settings from localStorage on mount (only on client) and when refreshKey changes
   useEffect(() => {
     if (!isClient) return;
     
@@ -80,7 +96,7 @@ export function useSettings() {
     } finally {
       setIsLoaded(true);
     }
-  }, [isClient]);
+  }, [isClient, refreshKey]);
 
   // Save settings to localStorage with expiration
   const saveSettings = useCallback((newSettings: UserSettings) => {
@@ -102,10 +118,25 @@ export function useSettings() {
       
       localStorage.setItem(STORAGE_KEY, serialized);
       setSettings(newSettings);
+      
+      // Dispatch custom event to notify other components (like Header)
+      // This ensures the header updates immediately when settings are saved
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('settingsSaved', {
+          detail: { settings: newSettings }
+        }));
+      }
     } catch (error) {
       console.error('Failed to save settings to localStorage:', error);
       // Update state even if saving fails
       setSettings(newSettings);
+      
+      // Still dispatch the event even if localStorage save failed
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('settingsSaved', {
+          detail: { settings: newSettings }
+        }));
+      }
     }
   }, []);
 
