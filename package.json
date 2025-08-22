@@ -16,6 +16,7 @@
     "@heroicons/react": "^2.2.0",
     "@types/pg": "^8.15.5",
     "dotenv": "^17.2.1",
+    "iron-session": "^8.0.4",
     "next": "15.4.6",
     "openai": "^5.12.2",
     "pg": "^8.16.3",

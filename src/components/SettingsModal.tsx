@@ -7,9 +7,12 @@ import {
   SpeakerWaveIcon as Volume2, 
   BellIcon as Bell, 
   SwatchIcon as Palette, 
-  CakeIcon as Coffee 
+  CakeIcon as Coffee,
+  CheckIcon,
+  XCircleIcon
 } from '@heroicons/react/24/outline';
 import { UserSettings } from '@/types';
+import { notificationService } from '@/lib/notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,7 +24,7 @@ interface SettingsModalProps {
 const DEFAULT_SETTINGS: UserSettings = {
   defaultSessionDuration: 1500, // 25 minutes
   soundEnabled: true,
-  notificationsEnabled: true,
+  notificationsEnabled: false, // Default to false
   theme: 'system',
   breakDuration: 300, // 5 minutes
   longBreakDuration: 900, // 15 minutes
@@ -35,6 +38,7 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
     breakDuration: '',
     longBreakDuration: ''
   });
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   useEffect(() => {
     if (currentSettings) {
@@ -50,6 +54,17 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
         breakDuration: '5', 
         longBreakDuration: '15'
       });
+    }
+    
+    // Check notification permission status
+    if (notificationService.isBasicSupported()) {
+      const permission = notificationService.getPermission();
+      setNotificationPermission(permission);
+      
+      // If notifications are enabled in settings but permission is not granted, disable them
+      if (currentSettings?.notificationsEnabled && permission !== 'granted') {
+        setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+      }
     }
   }, [currentSettings]);
 
@@ -116,6 +131,48 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
     return Math.floor(seconds / 60).toString();
   };
 
+  const handleNotificationToggle = async (enabled: boolean) => {
+    if (enabled && notificationService.isBasicSupported()) {
+      const currentPermission = notificationService.getPermission();
+      
+      if (currentPermission === 'denied') {
+        // Permission was previously denied - can't request again
+        alert('Notifications are blocked. Please enable them in your browser settings:\n\n' +
+              '1. Click the lock/info icon in the address bar\n' +
+              '2. Find "Notifications" and set to "Allow"\n' +
+              '3. Refresh the page and try again');
+        setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+        return;
+      }
+      
+      if (currentPermission === 'default') {
+        // Need to request permission
+        const permission = await notificationService.requestPermission();
+        setNotificationPermission(permission);
+        
+        if (permission === 'granted') {
+          setSettings(prev => ({ ...prev, notificationsEnabled: true }));
+          // Show test notification
+          notificationService.showNotification({
+            title: '✅ Notifications Enabled!',
+            body: 'You\'ll receive alerts for focus sessions and breaks.'
+          });
+        } else {
+          setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+          if (permission === 'denied') {
+            alert('Notification permission denied. You can enable it later in browser settings.');
+          }
+        }
+      } else {
+        // Permission already granted
+        setSettings(prev => ({ ...prev, notificationsEnabled: true }));
+      }
+    } else {
+      // Disabling notifications
+      setSettings(prev => ({ ...prev, notificationsEnabled: false }));
+    }
+  };
+
   const presetDurations = [
     { label: '15 min', value: 15 },
     { label: '25 min', value: 25 },
@@ -141,12 +198,22 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSave}
+              className="inline-flex items-center px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <CheckIcon className="w-4 h-4 mr-2" />
+              Save
+            </button>
+            <button
+              onClick={onClose}
+              className="inline-flex items-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <XCircleIcon className="w-4 h-4 mr-2" />
+              Cancel
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -282,17 +349,35 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
                   <Bell className="w-5 h-5 text-gray-600" />
                   <div>
                     <p className="font-medium text-gray-900">Notifications</p>
-                    <p className="text-sm text-gray-600">Show browser notifications</p>
+                    <p className="text-sm text-gray-600">
+                      Show browser notifications for sessions and breaks
+                      {notificationPermission === 'denied' && (
+                        <span className="block text-xs text-red-600 mt-1">
+                          ⚠️ Blocked - Enable in browser settings (click address bar icon)
+                        </span>
+                      )}
+                      {notificationPermission === 'default' && (
+                        <span className="block text-xs text-amber-600 mt-1">
+                          📍 Click to enable and grant permission
+                        </span>
+                      )}
+                      {notificationPermission === 'granted' && settings.notificationsEnabled && (
+                        <span className="block text-xs text-green-600 mt-1">
+                          ✅ Enabled and working
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
                     checked={settings.notificationsEnabled}
-                    onChange={(e) => setSettings(prev => ({ ...prev, notificationsEnabled: e.target.checked }))}
+                    onChange={(e) => handleNotificationToggle(e.target.checked)}
+                    disabled={notificationPermission === 'denied'}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className={`w-11 h-6 ${notificationPermission === 'denied' ? 'bg-gray-300 cursor-not-allowed' : 'bg-gray-200'} peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600`}></div>
                 </label>
               </div>
 
@@ -333,22 +418,6 @@ function SettingsModal({ isOpen, onClose, onSave, currentSettings }: SettingsMod
               </div>
             </div>
           </section>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Save Settings
-          </button>
         </div>
       </div>
     </div>

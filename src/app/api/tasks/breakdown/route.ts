@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getAuthenticatedUser } from '@/lib/auth-helpers';
+import { aiRateLimit } from '@/lib/rate-limit';
+import { validateTaskTitle, validateTaskDescription } from '@/lib/validation';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -22,16 +25,55 @@ Example:
 
 export async function POST(request: NextRequest) {
   try {
-    const { taskTitle, taskDescription } = await request.json();
-    console.log('API Request received:', { taskTitle, taskDescription });
-
-    if (!taskTitle) {
-      console.log('Error: Task title is required');
+    // Check authentication
+    let user;
+    try {
+      user = await getAuthenticatedUser();
+    } catch (authError) {
+      console.log('Unauthorized access attempt to task breakdown API');
       return NextResponse.json(
-        { success: false, error: 'Task title is required' },
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Check rate limit
+    const rateLimitResult = await aiRateLimit(request, user.email);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Too many requests. Please wait before trying again.',
+          retryAfter: Math.ceil((rateLimitResult.reset - Date.now()) / 1000)
+        },
+        { 
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+          }
+        }
+      );
+    }
+
+    const body = await request.json();
+    
+    // Validate and sanitize inputs
+    const titleValidation = validateTaskTitle(body.taskTitle);
+    if (!titleValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: titleValidation.error },
         { status: 400 }
       );
     }
+    
+    const descriptionValidation = validateTaskDescription(body.taskDescription);
+    
+    const taskTitle = titleValidation.value;
+    const taskDescription = descriptionValidation.value;
+    
+    console.log('API Request received from user:', user.email, { taskTitle, taskDescription });
 
     if (!process.env.OPENAI_API_KEY) {
       console.log('Error: OpenAI API key not configured');

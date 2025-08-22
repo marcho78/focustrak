@@ -1,37 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData, isValidSession } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('auth0_session');
+    // Get encrypted session
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     
-    if (!sessionCookie) {
+    // Check if session exists and is valid
+    if (!session.user || !isValidSession(session)) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       );
     }
     
-    try {
-      const sessionData = JSON.parse(sessionCookie.value);
-      
-      // Check if session is expired
-      if (sessionData.expiresAt && sessionData.expiresAt < Date.now()) {
-        return NextResponse.json(
-          { error: 'Session expired' },
-          { status: 401 }
-        );
-      }
-      
-      return NextResponse.json(sessionData.user);
-    } catch (error) {
-      console.error('Failed to parse session:', error);
-      return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
-      );
-    }
+    return NextResponse.json(session.user);
   } catch (error) {
     console.error('Failed to get user session:', error);
     return NextResponse.json(

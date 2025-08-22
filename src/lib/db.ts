@@ -1,15 +1,48 @@
 import { Pool } from 'pg';
+import { createLogger } from './logger';
+
+const logger = createLogger('Database');
 
 // Create a singleton pool instance
 let pool: Pool | null = null;
 
 export function getDbPool(): Pool {
   if (!pool) {
+    // Parse database URL to check if SSL is required
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const isLocalhost = process.env.AUTH0_BASE_URL?.includes('localhost');
+    
+    // Determine SSL configuration based on environment
+    let sslConfig: any = false;
+    
+    if (process.env.DATABASE_URL?.includes('sslmode=require')) {
+      // If the DATABASE_URL explicitly requires SSL (like Neon)
+      sslConfig = {
+        // In development/localhost, we need to allow self-signed certificates
+        rejectUnauthorized: !isDevelopment && !isLocalhost,
+        // For services like Neon that use specific SSL configs
+        ...(process.env.DATABASE_SSL_CERT ? {
+          ca: process.env.DATABASE_SSL_CERT,
+        } : {}),
+      };
+      
+      if (isDevelopment || isLocalhost) {
+        logger.warn('Database SSL certificate validation disabled for development/localhost');
+      }
+    } else if (isProduction && !isLocalhost) {
+      // In production (non-localhost), enforce SSL
+      sslConfig = {
+        rejectUnauthorized: true,
+        ...(process.env.DATABASE_SSL_CERT ? {
+          ca: process.env.DATABASE_SSL_CERT,
+        } : {}),
+      };
+    }
+    
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false,
-      },
+      ssl: sslConfig,
       // Improved connection pool settings for better reliability
       max: 20, // Maximum number of connections (increased)
       min: 2, // Minimum number of connections to maintain
@@ -22,27 +55,23 @@ export function getDbPool(): Pool {
       keepAliveInitialDelayMillis: 10000, // Initial delay for keep-alive
     });
 
-    // Handle pool errors with more detailed logging
+    // Handle pool errors with secure logging
     pool.on('error', (err) => {
-      console.error('❌ Unexpected error on idle client:', {
-        error: err.message,
-        stack: err.stack,
-        timestamp: new Date().toISOString()
-      });
+      logger.error('Unexpected error on idle client', err);
     });
     
     // Log pool connection events in development
     if (process.env.NODE_ENV === 'development') {
       pool.on('connect', () => {
-        console.log('🔌 New client connected to database');
+        logger.debug('New client connected to database');
       });
       
       pool.on('acquire', () => {
-        console.log('📥 Client acquired from pool');
+        logger.debug('Client acquired from pool');
       });
       
       pool.on('release', () => {
-        console.log('📤 Client released back to pool');
+        logger.debug('Client released back to pool');
       });
     }
 

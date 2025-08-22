@@ -15,8 +15,10 @@ import SettingsModal from '@/components/SettingsModal';
 import BreakTimer from '@/components/BreakTimer';
 import BreakCompleteModal from '@/components/BreakCompleteModal';
 import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
+import { notificationService } from '@/lib/notifications';
 import { 
   PauseIcon, 
   PlayIcon, 
@@ -298,6 +300,11 @@ export default function Home() {
         // Show break completion modal
         setIsBreakCompleteModalOpen(true);
         
+        // Send notification if enabled
+        if (settings.notificationsEnabled) {
+          notificationService.notifyBreakComplete();
+        }
+        
         // Clear the timer interval if it exists
         if (breakTimerIntervalRef.current) {
           clearInterval(breakTimerIntervalRef.current);
@@ -313,7 +320,7 @@ export default function Home() {
         return prev;
       }
     });
-  }, [currentTask]);
+  }, [currentTask, settings.notificationsEnabled]);
   
   // Start break timer
   const startBreakTimer = useCallback(() => {
@@ -427,6 +434,11 @@ export default function Home() {
       console.log('⚠️ No task available for resumption - keeping current task as is');
     }
     
+    // Send notification if enabled
+    if (settings.notificationsEnabled) {
+      notificationService.notifyBreakStart(breakDuration);
+    }
+    
     // Reset the break timer hook with new duration
     // Use setTimeout to ensure state update completes first
     setTimeout(() => {
@@ -450,7 +462,7 @@ export default function Home() {
         console.log('📊 Current task after break setup:', currentTask ? { id: currentTask.id, title: currentTask.title } : null);
       }, 100);
     }, 150);
-  }, [settings.breakDuration, settings.longBreakDuration, settings.autoStartBreaks, breakTimerHook, completedSessionData, currentTask]);
+  }, [settings.breakDuration, settings.longBreakDuration, settings.autoStartBreaks, settings.notificationsEnabled, breakTimerHook, completedSessionData, currentTask]);
   
   // Stable callback function
   const handleSessionComplete = useCallback(async () => {
@@ -530,6 +542,14 @@ export default function Home() {
           task: task // Always keep task for resumption after break
         });
         
+        // Send notification if enabled
+        if (settings.notificationsEnabled) {
+          await notificationService.notifySessionComplete(
+            task?.title || 'Untitled Task',
+            completedSteps
+          );
+        }
+        
         // Check if we should auto-start a break or show the completion modal
         if (isTaskFullyComplete) {
           // Task is complete - ALWAYS show the completion modal for celebration
@@ -573,7 +593,7 @@ export default function Home() {
     } else {
       console.log('⚠️ handleSessionComplete called but no current session');
     }
-  }, [settings.defaultSessionDuration, settings.autoStartBreaks, streak, handleTakeBreak]); // Include necessary dependencies
+  }, [settings.defaultSessionDuration, settings.autoStartBreaks, settings.notificationsEnabled, streak, handleTakeBreak]); // Include necessary dependencies
 
   // Create timer with the stable completion callback - wait for settings to load
   const timer = useTimer({
@@ -641,7 +661,7 @@ export default function Home() {
     };
   }, [currentSession, timer.isRunning, timer.isPaused, timer.timeRemaining, settings.defaultSessionDuration]);
 
-  const handleStart = useCallback(async (task?: Task) => {
+  const handleStart = async (task?: Task) => {
     console.log('🚀 Starting session with task:', task);
     setIsStarting(true);
     
@@ -651,6 +671,14 @@ export default function Home() {
       // Validate that we have a task to work with
       if (!task) {
         throw new Error('Cannot start focus session without a task. Please create a new task first.');
+      }
+      
+      // Send notification if enabled
+      if (settings.notificationsEnabled) {
+        await notificationService.notifySessionStart(
+          task.title,
+          settings.defaultSessionDuration || 1500
+        );
       }
       
       // If it's a temporary task, create it in the database
@@ -699,7 +727,7 @@ export default function Home() {
     } finally {
       setIsStarting(false);
     }
-  }, [timer]);
+  };
 
   const handlePause = () => {
     if (timer.isRunning && !timer.isPaused) {
@@ -1146,7 +1174,7 @@ export default function Home() {
   }
 
   return (
-    <div className={`min-h-screen ${
+    <div className={`min-h-screen relative pb-10 ${
       isBreakActive 
         ? 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900 dark:to-emerald-800'
         : 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800'
@@ -1188,6 +1216,7 @@ export default function Home() {
                 onStart={handleStart}
                 onUpdateTask={(updatedTask) => setCurrentTask(updatedTask)}
                 isLoading={isStarting}
+                sessionDuration={settings.defaultSessionDuration || 1500}
               />
             </div>
           ) : (
@@ -1275,12 +1304,6 @@ export default function Home() {
           )}
         </div>
         
-        {/* App info */}
-        <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-          <p>🎯 {Math.floor((settings.defaultSessionDuration || 1500) / 60)}-minute focus sessions</p>
-          <p>✨ AI-powered task breakdown</p>
-          <p>📝 Distraction capture</p>
-        </div>
       </div>
       
       {/* Distraction capture modal */}
@@ -1379,6 +1402,7 @@ export default function Home() {
           <TrophyIcon className="w-6 h-6 mx-auto" />
         </button>
       </div>
+      <Footer />
     </div>
   );
 }

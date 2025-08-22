@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getAuthenticatedUser } from '@/lib/auth-helpers';
+import { aiRateLimit } from '@/lib/rate-limit';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -19,8 +21,40 @@ Return ONLY a JSON array of strings, where each string is a step. Do not include
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    let user;
+    try {
+      user = await getAuthenticatedUser();
+    } catch (authError) {
+      console.log('Unauthorized access attempt to generate-next-steps API');
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Check rate limit
+    const rateLimitResult = await aiRateLimit(request, user.email);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Too many requests. Please wait before trying again.',
+          retryAfter: Math.ceil((rateLimitResult.reset - Date.now()) / 1000)
+        },
+        { 
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+          }
+        }
+      );
+    }
+
     const { taskTitle, taskDescription, completedSteps, remainingSteps } = await request.json();
-    console.log('Generate next steps request:', { 
+    console.log('Generate next steps request from user:', user.email, { 
       taskTitle, 
       completedStepsCount: completedSteps?.length,
       remainingStepsCount: remainingSteps?.length 

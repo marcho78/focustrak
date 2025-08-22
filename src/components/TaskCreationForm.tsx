@@ -19,6 +19,7 @@ interface TaskCreationFormProps {
   onUpdateTask?: (task: Task) => void;
   isLoading?: boolean;
   disabled?: boolean;
+  sessionDuration?: number; // in seconds
 }
 
 
@@ -28,6 +29,7 @@ export default function TaskCreationForm({
   onUpdateTask,
   isLoading = false,
   disabled = false,
+  sessionDuration = 1500,
 }: TaskCreationFormProps) {
   const [taskTitle, setTaskTitle] = useState(existingTask?.title || '');
   const [taskDescription, setTaskDescription] = useState(existingTask?.description || '');
@@ -492,14 +494,6 @@ export default function TaskCreationForm({
           </button>
         </div>
 
-        {steps.length === 0 && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-3">
-            {useAiBreakdown 
-              ? '🤖 Click "Generate AI Steps" above to get AI-powered task breakdown'
-              : '✨ Enable AI breakdown above or add steps manually'
-            }
-          </p>
-        )}
       </div>
 
       {/* Action Buttons */}
@@ -534,7 +528,7 @@ export default function TaskCreationForm({
 
       {/* Help Text */}
       <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>🎯 Start your {Math.floor((25 * 60) / 60)}-minute focus session</p>
+        <p>🎯 Start your {Math.floor(sessionDuration / 60)}-minute focus session</p>
         <p className="mt-1">✨ Break tasks into small, actionable steps for better focus</p>
       </div>
 

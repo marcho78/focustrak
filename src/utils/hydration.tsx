@@ -2,6 +2,8 @@
  * Utility functions for handling hydration mismatches and client-side rendering
  */
 
+import React from 'react';
+
 /**
  * Safe way to check if code is running on the client side
  */
@@ -19,17 +21,18 @@ export const isServerSide = (): boolean => {
 /**
  * Get a value that's safe for hydration - returns serverValue during SSR and clientValue after hydration
  */
-export const getHydrationSafeValue = <T>(serverValue: T, clientValue: T): T => {
+export const getHydrationSafeValue = <T,>(serverValue: T, clientValue: T): T => {
   if (isServerSide()) {
     return serverValue;
   }
   return clientValue;
 };
 
+import { useEffect, useState } from 'react';
+
 /**
  * Hook to safely handle client-side only operations
  */
-import { useEffect, useState } from 'react';
 
 export const useClientSide = () => {
   const [isClient, setIsClient] = useState(false);

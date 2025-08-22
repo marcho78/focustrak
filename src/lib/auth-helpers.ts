@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers';
 import { query } from './db';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData, isValidSession } from './session';
 
 export interface AuthenticatedUser {
   id: string;
@@ -12,30 +14,19 @@ export interface AuthenticatedUser {
 }
 
 /**
- * Get the authenticated user from the session cookie
+ * Get the authenticated user from the encrypted session cookie
  * Returns the user data or throws an error if not authenticated
  */
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get('auth0_session');
+  // Get encrypted session
+  const session = await getIronSession<SessionData>(cookies(), sessionOptions);
   
-  if (!sessionCookie) {
+  // Check if session exists and is valid
+  if (!session.user || !isValidSession(session)) {
     throw new Error('Not authenticated');
   }
   
-  let sessionData;
-  try {
-    sessionData = JSON.parse(sessionCookie.value);
-  } catch (error) {
-    throw new Error('Invalid session');
-  }
-  
-  // Check if session is expired
-  if (sessionData.expiresAt && sessionData.expiresAt < Date.now()) {
-    throw new Error('Session expired');
-  }
-  
-  const { sub: auth0Id } = sessionData.user;
+  const { sub: auth0Id } = session.user;
   
   // Get user from database with retry logic
   let userResult;
