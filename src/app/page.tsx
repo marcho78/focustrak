@@ -1151,23 +1151,47 @@ export default function Home() {
   // Show login prompt if user is not authenticated
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 text-center">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Focus
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
-            Start sooner, stay focused, finish on time
-          </p>
+      <div 
+        className="min-h-screen p-4 flex items-center justify-center relative"
+        style={{
+          backgroundImage: 'url(/login-bg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        {/* Dark overlay for better text readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/30 to-black/40 backdrop-blur-[0.5px]" />
+        
+        {/* Login card */}
+        <div className="relative z-10 max-w-md w-full bg-white/95 dark:bg-gray-800/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 text-center border border-white/20">
+          <div className="mb-6">
+            <h1 className="text-5xl font-bold mb-3">
+              <span className="text-blue-600 dark:text-blue-400">Focus</span>
+              <span className="text-green-600 dark:text-green-400">Trak</span>
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              Start sooner, stay focused, finish on time
+            </p>
+          </div>
+          
           <p className="text-gray-700 dark:text-gray-300 mb-6">
             Please sign in to start your focus session
           </p>
+          
           <Link
             href="/api/auth/login"
-            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="inline-flex items-center justify-center w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all transform hover:scale-[1.02] shadow-lg font-medium"
           >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+            </svg>
             Sign In to Get Started
           </Link>
+          
+          <div className="mt-6 text-xs text-gray-500 dark:text-gray-400">
+            Secure authentication powered by Auth0
+          </div>
         </div>
       </div>
     );
