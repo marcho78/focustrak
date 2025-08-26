@@ -578,7 +578,7 @@ export default function TaskManager({ isOpen, onClose, onContinueTask, refresh }
                   <p className="text-red-600 dark:text-red-400 font-medium mb-2">Unable to Load Tasks</p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{error}</p>
                   <button 
-                    onClick={fetchTasks}
+                    onClick={() => fetchTasks()}
                     className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                   >
                     <ArrowPathIcon className="w-4 h-4 mr-2" />

@@ -48,11 +48,6 @@ export function getDbPool(): Pool {
       min: 2, // Minimum number of connections to maintain
       idleTimeoutMillis: 60000, // Keep idle connections longer (60 seconds)
       connectionTimeoutMillis: 10000, // Longer timeout for connecting (10 seconds)
-      acquireTimeoutMillis: 10000, // Timeout for acquiring a connection from pool
-      statementTimeout: 30000, // Timeout for individual queries (30 seconds)
-      query_timeout: 30000, // Alternative query timeout
-      keepAlive: true, // Enable TCP keep-alive
-      keepAliveInitialDelayMillis: 10000, // Initial delay for keep-alive
     });
 
     // Handle pool errors with secure logging

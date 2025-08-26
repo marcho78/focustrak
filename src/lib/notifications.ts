@@ -123,9 +123,6 @@ class NotificationService {
             tag: options.tag,
             requireInteraction: options.requireInteraction || false,
             silent: options.silent || false,
-            actions: options.actions || [],
-            data: options.data || {},
-            vibrate: [200, 100, 200],
           });
           return null; // Service worker notifications don't return a Notification object
         }
@@ -133,7 +130,7 @@ class NotificationService {
 
       // Fallback to basic Notification API
       // Note: Basic Notification API doesn't support actions or some other properties
-      const notificationOptions: NotificationOptions = {
+      const notificationOptions: any = {
         body: options.body,
         icon: options.icon || '/favicon.ico',
         tag: options.tag,

@@ -16,9 +16,11 @@ import BreakTimer from '@/components/BreakTimer';
 import BreakCompleteModal from '@/components/BreakCompleteModal';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import AICoach from '@/components/AICoach';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
 import { notificationService } from '@/lib/notifications';
+import { userBehaviorService } from '@/lib/user-behavior-service';
 import { 
   PauseIcon, 
   PlayIcon, 
@@ -550,6 +552,9 @@ export default function Home() {
           );
         }
         
+        // Track session completion for AI coaching
+        userBehaviorService.endSession(true, settings.defaultSessionDuration || 1500);
+        
         // Check if we should auto-start a break or show the completion modal
         if (isTaskFullyComplete) {
           // Task is complete - ALWAYS show the completion modal for celebration
@@ -712,6 +717,15 @@ export default function Home() {
       timer.start();
       console.log('Timer started. Current state:', { isRunning: timer.isRunning, timeRemaining: timer.timeRemaining });
       
+      // Track session start for AI coaching
+      if (currentTaskToUse) {
+        userBehaviorService.startSession(
+          currentTaskToUse.id,
+          currentTaskToUse.title,
+          currentTaskToUse.steps?.length || 0
+        );
+      }
+      
       // Update streak info
       try {
         const streakData = await getStreak();
@@ -732,8 +746,11 @@ export default function Home() {
   const handlePause = () => {
     if (timer.isRunning && !timer.isPaused) {
       timer.pause();
+      userBehaviorService.pauseSession();
     } else if (timer.isPaused) {
       timer.start();
+      // Track pause duration when resuming (simplified - you might want to track actual duration)
+      userBehaviorService.resumeSession(5);
     }
   };
 
@@ -813,9 +830,17 @@ export default function Home() {
       setCurrentTask(prev => {
         if (!prev) return prev;
         
-        const updatedSteps = prev.steps.map(step => 
-          step.id === stepId ? { ...step, done: !step.done } : step
-        );
+        const updatedSteps = prev.steps.map(step => {
+          if (step.id === stepId) {
+            const newDoneState = !step.done;
+            // Track step completion for AI coaching
+            if (newDoneState) {
+              userBehaviorService.completeStep();
+            }
+            return { ...step, done: newDoneState };
+          }
+          return step;
+        });
         
         return { ...prev, steps: updatedSteps };
       });
@@ -1206,6 +1231,18 @@ export default function Home() {
       {/* Add Header */}
       <Header onOpenSettings={() => setIsSettingsOpen(true)} />
       
+      {/* AI Coach */}
+      <AICoach 
+        taskId={currentTask?.id}
+        taskTitle={currentTask?.title}
+        taskSteps={currentTask?.steps}
+        sessionActive={timer.isRunning}
+        onSuggestionApply={(suggestion) => {
+          console.log('Applying AI suggestion:', suggestion);
+          // Handle specific suggestions here
+        }}
+      />
+      
       <div className="max-w-2xl mx-auto pt-20 px-4">
         {/* Streak display */}
         <div className="text-center mb-8">
@@ -1416,7 +1453,7 @@ export default function Home() {
       />
       
       {/* Floating action buttons */}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-40">
+      <div className="fixed bottom-20 right-6 flex flex-col gap-4 z-40">
         {/* Task history button */}
         <button
           onClick={() => setIsTaskHistoryOpen(true)}

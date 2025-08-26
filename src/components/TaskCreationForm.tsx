@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task, TaskStep } from '@/types';
 import ValidationModal from '@/components/ValidationModal';
+import { focusContentService } from '@/lib/focus-content-service';
 import { 
   PlayIcon, 
   PlusIcon, 
@@ -45,6 +46,7 @@ export default function TaskCreationForm({
     title: '',
     message: ''
   });
+  const [motivationalMessage, setMotivationalMessage] = useState<string | null>(null);
 
 
   const createTask = (customSteps?: TaskStep[]): Task => {
@@ -90,7 +92,26 @@ export default function TaskCreationForm({
     
     // Create and start the task with the appropriate steps
     const task = createTask(stepsToUse);
+    
+    // Show motivational message
+    const message = focusContentService.getTaskCreationLine();
+    console.log('Setting motivational message:', message);
+    setMotivationalMessage(message);
+    
+    // Start the task first
     onStart(task);
+    
+    // Clear form after starting
+    setTaskTitle('');
+    setTaskDescription('');
+    setSteps([]);
+    setShowForm(false);
+    
+    // Hide message after 5 seconds
+    setTimeout(() => {
+      console.log('Clearing motivational message');
+      setMotivationalMessage(null);
+    }, 5000);
   };
 
   const handleAddStep = () => {
@@ -224,6 +245,20 @@ export default function TaskCreationForm({
   if (existingTask && !showForm) {
     return (
       <div className="flex flex-col items-center space-y-6 w-full max-w-md mx-auto">
+        {/* Motivational Message Display */}
+        {motivationalMessage && (
+          <div className="fixed top-20 right-4 max-w-sm z-50 animate-fade-in-down">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg shadow-xl">
+              <div className="flex items-start space-x-3">
+                <SparklesIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm font-medium leading-relaxed">
+                  {motivationalMessage}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Start Button */}
         <button
           onClick={handleStart}
@@ -316,6 +351,20 @@ export default function TaskCreationForm({
   // Task creation/editing form
   return (
     <div className="flex flex-col space-y-6 w-full max-w-lg mx-auto">
+      {/* Motivational Message Display */}
+      {motivationalMessage && (
+        <div className="fixed top-20 right-4 max-w-sm z-50 animate-fade-in-down">
+          <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg shadow-xl">
+            <div className="flex items-start space-x-3">
+              <SparklesIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm font-medium leading-relaxed">
+                {motivationalMessage}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task Title Input */}
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

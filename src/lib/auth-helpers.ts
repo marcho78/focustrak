@@ -19,7 +19,8 @@ export interface AuthenticatedUser {
  */
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser> {
   // Get encrypted session
-  const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+  const cookieStore = await cookies();
+  const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
   
   // Check if session exists and is valid
   if (!session.user || !isValidSession(session)) {

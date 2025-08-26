@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
-import { PlayIcon, PauseIcon, StopIcon } from '@heroicons/react/24/solid';
+import React, { useState, useEffect } from 'react';
+import { PlayIcon, PauseIcon, StopIcon, SparklesIcon } from '@heroicons/react/24/solid';
 import { formatTime, getProgress } from '@/hooks/useTimer';
+import { focusContentService } from '@/lib/focus-content-service';
 
 interface BreakTimerProps {
   timeRemaining: number;
@@ -23,6 +24,14 @@ export default function BreakTimer({
   onPause,
   onStop
 }: BreakTimerProps) {
+  const [breakContent, setBreakContent] = useState<{ line: string; tip: string } | null>(null);
+  
+  useEffect(() => {
+    // Get break content when component mounts
+    const content = focusContentService.getBreakContent();
+    setBreakContent(content);
+  }, []);
+  
   const progress = getProgress(timeRemaining, totalTime);
   const radius = 160;
   const strokeWidth = 8;
@@ -107,18 +116,31 @@ export default function BreakTimer({
         </button>
       </div>
 
-      {/* Break Tips */}
-      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4 max-w-md mx-auto">
-        <h3 className="font-medium text-green-800 dark:text-green-300 mb-2">
-          Break Tips:
-        </h3>
-        <ul className="text-sm text-green-700 dark:text-green-400 space-y-1 text-left">
-          <li>• Step away from your screen</li>
-          <li>• Take a few deep breaths</li>
-          <li>• Stretch or walk around</li>
-          <li>• Hydrate and rest your eyes</li>
-        </ul>
-      </div>
+      {/* Break Content - Motivational Line and Tip */}
+      {breakContent && (
+        <div className="space-y-4 max-w-md mx-auto">
+          {/* Motivational Line */}
+          <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <SparklesIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm font-medium leading-relaxed">
+                {breakContent.line}
+              </p>
+            </div>
+          </div>
+          
+          {/* Productivity Tip */}
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+            <h3 className="font-medium text-green-800 dark:text-green-300 mb-2 flex items-center">
+              <SparklesIcon className="w-4 h-4 mr-2" />
+              Productivity Tip
+            </h3>
+            <p className="text-sm text-green-700 dark:text-green-400 text-left">
+              {breakContent.tip}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

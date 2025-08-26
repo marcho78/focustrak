@@ -7,7 +7,8 @@ import { sessionOptions, SessionData, isValidSession } from '@/lib/session';
 export async function GET(request: NextRequest) {
   try {
     // Get encrypted session
-    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+    const cookieStore = await cookies();
+    const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
     
     // Check if session exists and is valid
     if (!session.user || !isValidSession(session)) {

@@ -52,9 +52,6 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false, // Remove X-Powered-By header
-  experimental: {
-    instrumentationHook: true, // Enable instrumentation for startup validation
-  },
   
   async headers() {
     return [

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     });
     
     // Dynamically determine the redirect URL based on the current host
-    const host = req.headers.get('host');
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
     const protocol = req.headers.get('x-forwarded-proto') || 'http';
     const baseUrl = `${protocol}://${host}`;
     
@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
     );
     
     // Clear encrypted session
-    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+    const cookieStore = await cookies();
+    const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
     session.destroy();
     
     // Clear other auth cookies
@@ -124,7 +125,8 @@ export async function GET(req: NextRequest) {
       const user = await userResponse.json();
       
       // Create encrypted session
-      const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+      const cookieStore2 = await cookies();
+      const session = await getIronSession<SessionData>(cookieStore2, sessionOptions);
       
       // Store session data (automatically encrypted by iron-session)
       session.user = {

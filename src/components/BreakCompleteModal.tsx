@@ -1,10 +1,12 @@
-import { Fragment } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { 
   CheckCircleIcon,
   PlayIcon,
-  XMarkIcon
+  XMarkIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
+import { focusContentService } from '@/lib/focus-content-service';
 
 interface BreakCompleteModalProps {
   isOpen: boolean;
@@ -23,6 +25,16 @@ export default function BreakCompleteModal({
   breakDuration,
   hasTaskToResume = false
 }: BreakCompleteModalProps) {
+  const [sessionStartLine, setSessionStartLine] = useState<string>('');
+  
+  useEffect(() => {
+    if (isOpen) {
+      // Get a fresh session start line each time the modal opens
+      const line = focusContentService.getSessionStartLine();
+      setSessionStartLine(line);
+    }
+  }, [isOpen]);
+  
   const formatDuration = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
@@ -80,6 +92,21 @@ export default function BreakCompleteModal({
                       🎉 Great job taking a {breakType} break! You recharged for {formatDuration(breakDuration)}. Ready to get back to focused work?
                     </p>
                   </div>
+
+                  {/* Motivational Line for Next Session */}
+                  {sessionStartLine && (
+                    <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg p-4 mb-4">
+                      <div className="flex items-start space-x-3">
+                        <SparklesIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-medium opacity-90 mb-1">Ready for your next session?</p>
+                          <p className="text-sm font-medium leading-relaxed">
+                            {sessionStartLine}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center mb-4">
                     <p className="text-sm font-medium text-blue-900">
