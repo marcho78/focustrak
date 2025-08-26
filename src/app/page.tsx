@@ -17,6 +17,7 @@ import BreakCompleteModal from '@/components/BreakCompleteModal';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AICoach from '@/components/AICoach';
+import BottomNavigation from '@/components/BottomNavigation';
 import { useTimer } from '@/hooks/useTimer';
 import { useSettings } from '@/hooks/useSettings';
 import { notificationService } from '@/lib/notifications';
@@ -173,6 +174,8 @@ export default function Home() {
   const [isSessionCompleteModalOpen, setIsSessionCompleteModalOpen] = useState(false);
   const [isTaskHistoryOpen, setIsTaskHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAICoachOpen, setIsAICoachOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<'tasks' | 'ai' | 'settings' | null>(null);
   const [taskManagerRefresh, setTaskManagerRefresh] = useState(0);
   const [completedSessionData, setCompletedSessionData] = useState<{
     duration: number;
@@ -1223,7 +1226,7 @@ export default function Home() {
   }
 
   return (
-    <div className={`min-h-screen relative pb-10 ${
+    <div className={`min-h-screen relative pb-24 md:pb-10 ${
       isBreakActive 
         ? 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900 dark:to-emerald-800'
         : 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800'
@@ -1231,8 +1234,13 @@ export default function Home() {
       {/* Add Header */}
       <Header onOpenSettings={() => setIsSettingsOpen(true)} />
       
-      {/* AI Coach */}
+      {/* AI Coach Modal */}
       <AICoach 
+        isOpen={isAICoachOpen}
+        onClose={() => {
+          setIsAICoachOpen(false);
+          setActivePanel(null);
+        }}
         taskId={currentTask?.id}
         taskTitle={currentTask?.title}
         taskSteps={currentTask?.steps}
@@ -1413,7 +1421,10 @@ export default function Home() {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setActivePanel(null);
+        }}
         onSave={saveSettings}
         currentSettings={settings}
       />
@@ -1421,7 +1432,10 @@ export default function Home() {
       {/* Task Manager Modal */}
       <TaskManager
         isOpen={isTaskHistoryOpen}
-        onClose={() => setIsTaskHistoryOpen(false)}
+        onClose={() => {
+          setIsTaskHistoryOpen(false);
+          setActivePanel(null);
+        }}
         refresh={taskManagerRefresh}
         onContinueTask={(task) => {
           // Convert TaskManager task format to our Task format
@@ -1452,17 +1466,22 @@ export default function Home() {
         }}
       />
       
-      {/* Floating action buttons */}
-      <div className="fixed bottom-20 right-6 flex flex-col gap-4 z-40">
-        {/* Task history button */}
-        <button
-          onClick={() => setIsTaskHistoryOpen(true)}
-          className="w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-700 dark:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800"
-          aria-label="View task history"
-        >
-          <TrophyIcon className="w-6 h-6 mx-auto" />
-        </button>
-      </div>
+      {/* Bottom Navigation */}
+      <BottomNavigation
+        onTaskManagerClick={() => {
+          setIsTaskHistoryOpen(true);
+          setActivePanel('tasks');
+        }}
+        onAICoachClick={() => {
+          setIsAICoachOpen(true);
+          setActivePanel('ai');
+        }}
+        onSettingsClick={() => {
+          setIsSettingsOpen(true);
+          setActivePanel('settings');
+        }}
+        activePanel={activePanel}
+      />
       <Footer />
     </div>
   );

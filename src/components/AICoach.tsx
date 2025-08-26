@@ -13,6 +13,8 @@ import { aiCoachService, CoachAdvice } from '@/lib/ai-coach-service';
 import { userBehaviorService } from '@/lib/user-behavior-service';
 
 interface AICoachProps {
+  isOpen: boolean;
+  onClose: () => void;
   taskId?: string;
   taskTitle?: string;
   taskSteps?: Array<{ id: string; content: string; done: boolean }>;
@@ -21,6 +23,8 @@ interface AICoachProps {
 }
 
 export default function AICoach({ 
+  isOpen,
+  onClose,
   taskId, 
   taskTitle,
   taskSteps = [],
@@ -28,7 +32,7 @@ export default function AICoach({
   onSuggestionApply 
 }: AICoachProps) {
   const [advice, setAdvice] = useState<CoachAdvice | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true); // Always open when modal is visible
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'coach'; message: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -136,14 +140,16 @@ export default function AICoach({
     }
   };
 
-  if (!coachEnabled) {
+  if (!coachEnabled || !isOpen) {
     return null;
   }
 
   return (
-    <>
-      {/* Floating advice display */}
-      {advice && !chatOpen && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      {/* Modal Container */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        {/* Floating advice display - hide for now in modal */}
+        {false && advice && !chatOpen && (
         <div className="fixed bottom-48 right-6 max-w-sm z-40 animate-fade-in-up">
           <div className={`
             p-4 rounded-lg shadow-lg backdrop-blur-sm
@@ -182,33 +188,27 @@ export default function AICoach({
         </div>
       )}
 
-      {/* Coach chat button - EXACT same size as task button with proper spacing */}
-      <button
-        onClick={() => setChatOpen(!chatOpen)}
-        className="fixed bottom-36 right-6 w-14 h-14 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300 dark:focus:ring-purple-800 flex items-center justify-center"
-      >
-        {chatOpen ? (
-          <XMarkIcon className="w-6 h-6" />
-        ) : (
-          <ChatBubbleLeftRightIcon className="w-6 h-6" />
-        )}
-      </button>
-
-      {/* Chat interface - positioned above the coach button */}
-      {chatOpen && (
-        <div className="fixed bottom-52 right-6 w-96 h-[500px] bg-white dark:bg-gray-800 rounded-lg shadow-2xl z-40 flex flex-col">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white p-4 rounded-t-lg flex items-center justify-between">
+        {/* Chat interface - main modal content */}
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white p-4 rounded-t-2xl flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <SparklesIcon className="w-5 h-5" />
               <span className="font-medium">AI Focus Coach</span>
             </div>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="text-white/80 hover:text-white"
-            >
-              <AdjustmentsHorizontalIcon className="w-5 h-5" />
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="text-white/80 hover:text-white"
+              >
+                <AdjustmentsHorizontalIcon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={onClose}
+                className="text-white/80 hover:text-white"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Settings panel */}
@@ -336,8 +336,7 @@ export default function AICoach({
               </button>
             </form>
           </div>
-        </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
