@@ -1243,7 +1243,7 @@ export default function Home() {
         }}
       />
       
-      <div className="max-w-2xl mx-auto pt-20 px-4">
+      <div className="max-w-2xl mx-auto pt-20 px-4 w-full overflow-x-hidden">
         {/* Streak display */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center text-orange-600 dark:text-orange-400">

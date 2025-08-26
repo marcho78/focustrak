@@ -46,11 +46,10 @@ export default function BreakTimer({
       </h2>
       
       {/* Circular Progress Timer */}
-      <div className="relative inline-block mb-8">
+      <div className="relative inline-block mb-8 max-w-[340px] w-full">
         <svg
-          width="340"
-          height="340"
-          className="transform -rotate-90"
+          viewBox="0 0 340 340"
+          className="transform -rotate-90 w-full h-full"
         >
           {/* Background circle */}
           <circle

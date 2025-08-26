@@ -19,6 +19,12 @@ export const metadata: Metadata = {
   keywords: ["focus", "productivity", "pomodoro", "procrastination", "time management"],
   authors: [{ name: "Focus App" }],
   manifest: "/manifest.json",
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
