@@ -1332,33 +1332,39 @@ export default function Home() {
                 </div>
               )}
               
-              {/* Session controls */}
-              <div className="flex justify-center space-x-4 mb-6">
+              {/* Session controls - Responsive mobile-first design */}
+              <div className="flex justify-center gap-2 sm:gap-3 mb-6">
                 <button
                   onClick={handlePause}
-                  className="flex items-center px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                  className="flex flex-col sm:flex-row items-center justify-center px-3 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-xl hover:from-yellow-600 hover:to-yellow-700 transition-all shadow-md hover:shadow-lg active:scale-95 min-w-[80px] sm:min-w-[100px]"
                 >
                   {timer.isPaused ? (
-                    <><PlayIcon className="w-5 h-5 mr-2" />Resume</>
+                    <>
+                      <PlayIcon className="w-5 h-5 sm:mr-2" />
+                      <span className="text-xs sm:text-sm font-medium mt-1 sm:mt-0">Resume</span>
+                    </>
                   ) : (
-                    <><PauseIcon className="w-5 h-5 mr-2" />Pause</>
+                    <>
+                      <PauseIcon className="w-5 h-5 sm:mr-2" />
+                      <span className="text-xs sm:text-sm font-medium mt-1 sm:mt-0">Pause</span>
+                    </>
                   )}
                 </button>
                 
                 <button
                   onClick={handleOpenDistractionModal}
-                  className="flex items-center px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                  className="flex flex-col sm:flex-row items-center justify-center px-3 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-md hover:shadow-lg active:scale-95 min-w-[80px] sm:min-w-[100px]"
                 >
-                  <ExclamationTriangleIcon className="w-5 h-5 mr-2" />
-                  Not Now
+                  <ExclamationTriangleIcon className="w-5 h-5 sm:mr-2" />
+                  <span className="text-xs sm:text-sm font-medium mt-1 sm:mt-0 whitespace-nowrap">Not Now</span>
                 </button>
                 
                 <button
                   onClick={handleStopClick}
-                  className="flex items-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  className="flex flex-col sm:flex-row items-center justify-center px-3 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl hover:from-red-600 hover:to-red-700 transition-all shadow-md hover:shadow-lg active:scale-95 min-w-[80px] sm:min-w-[100px]"
                 >
-                  <StopIcon className="w-5 h-5 mr-2" />
-                  Stop
+                  <StopIcon className="w-5 h-5 sm:mr-2" />
+                  <span className="text-xs sm:text-sm font-medium mt-1 sm:mt-0">Stop</span>
                 </button>
               </div>
               

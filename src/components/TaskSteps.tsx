@@ -226,7 +226,7 @@ export default function TaskSteps({
       {/* Add new step - Show during active sessions */}
       {!readonly && onAddStep && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <input
               type="text"
               value={newStepInput}
@@ -239,25 +239,28 @@ export default function TaskSteps({
               placeholder="Add a new step..."
               className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button
-              onClick={handleAddStep}
-              disabled={!newStepInput.trim()}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
-            >
-              <PlusIcon className="w-4 h-4 mr-1" />
-              Add
-            </button>
-            {/* Generate Next Steps button - only show if there are completed steps */}
-            {onGenerateSteps && steps.some(step => step.done) && (
+            <div className="flex gap-2">
               <button
-                onClick={onGenerateSteps}
-                disabled={isGeneratingSteps}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+                onClick={handleAddStep}
+                disabled={!newStepInput.trim()}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center flex-1 sm:flex-initial justify-center"
               >
-                <SparklesIcon className="w-4 h-4 mr-1" />
-                {isGeneratingSteps ? 'Generating...' : 'Generate Next Steps'}
+                <PlusIcon className="w-4 h-4 mr-1" />
+                Add
               </button>
-            )}
+              {/* Generate Next Steps button - only show if there are completed steps */}
+              {onGenerateSteps && steps.some(step => step.done) && (
+                <button
+                  onClick={onGenerateSteps}
+                  disabled={isGeneratingSteps}
+                  className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center flex-1 sm:flex-initial justify-center whitespace-nowrap"
+                >
+                  <SparklesIcon className="w-4 h-4 mr-1" />
+                  <span className="hidden sm:inline">{isGeneratingSteps ? 'Generating...' : 'Generate Next Steps'}</span>
+                  <span className="sm:hidden">{isGeneratingSteps ? '...' : 'Generate'}</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             💡 Break down your task further as you work or use AI to generate next steps based on completed ones
