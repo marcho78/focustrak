@@ -153,11 +153,11 @@ export default function AICoach({
         <div className="fixed bottom-48 right-6 max-w-sm z-40 animate-fade-in-up">
           <div className={`
             p-4 rounded-lg shadow-lg backdrop-blur-sm
-            ${advice.type === 'celebration' ? 'bg-gradient-to-r from-green-500 to-green-600' : ''}
-            ${advice.type === 'warning' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : ''}
-            ${advice.type === 'technique' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : ''}
-            ${advice.type === 'motivation' ? 'bg-gradient-to-r from-purple-500 to-purple-600' : ''}
-            ${advice.type === 'tip' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600' : ''}
+            ${advice?.type === 'celebration' ? 'bg-gradient-to-r from-green-500 to-green-600' : ''}
+            ${advice?.type === 'warning' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : ''}
+            ${advice?.type === 'technique' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : ''}
+            ${advice?.type === 'motivation' ? 'bg-gradient-to-r from-purple-500 to-purple-600' : ''}
+            ${advice?.type === 'tip' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600' : ''}
             text-white
           `}>
             <div className="flex items-start justify-between">
@@ -165,14 +165,14 @@ export default function AICoach({
                 <SparklesIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-medium leading-relaxed">
-                    {advice.message}
+                    {advice?.message}
                   </p>
-                  {advice.suggestedAction && (
+                  {advice?.suggestedAction && (
                     <button
-                      onClick={() => onSuggestionApply?.(advice.suggestedAction!.action)}
+                      onClick={() => onSuggestionApply?.(advice?.suggestedAction?.action || '')}
                       className="mt-2 text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full transition-colors"
                     >
-                      {advice.suggestedAction.label}
+                      {advice?.suggestedAction?.label}
                     </button>
                   )}
                 </div>
